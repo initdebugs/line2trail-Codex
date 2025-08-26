@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../map/screens/map_screen.dart';
 import '../../routes/screens/routes_screen.dart';
+import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 
 class MainNavigation extends StatefulWidget {
@@ -12,20 +13,51 @@ class MainNavigation extends StatefulWidget {
 
 class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
-
-  final List<Widget> _screens = [
-    const MapScreen(),
-    const RoutesScreen(),
-    const PlaceholderScreen(title: 'Navigation'),
-    const PlaceholderScreen(title: 'Settings'),
-  ];
+  SavedRoute? _routeToLoad;
+  bool _shouldRefreshRoutes = false;
 
   @override
   Widget build(BuildContext context) {
+    final List<Widget> screens = [
+      MapScreen(
+        routeToLoad: _routeToLoad,
+        onRouteSaved: () {
+          // Mark that routes should refresh and switch to routes tab
+          setState(() {
+            _shouldRefreshRoutes = true;
+            _currentIndex = 1;
+          });
+        },
+        onRouteLoaded: () {
+          // Clear the route after it's loaded
+          setState(() {
+            _routeToLoad = null;
+          });
+        },
+      ),
+      RoutesScreen(
+        shouldRefresh: _shouldRefreshRoutes,
+        onRefreshComplete: () {
+          setState(() {
+            _shouldRefreshRoutes = false;
+          });
+        },
+        onRouteSelected: (route) {
+          // Set the route to load and switch to map tab
+          setState(() {
+            _routeToLoad = route;
+            _currentIndex = 0;
+          });
+        },
+      ),
+      const PlaceholderScreen(title: 'Navigation'),
+      const PlaceholderScreen(title: 'Settings'),
+    ];
+
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,

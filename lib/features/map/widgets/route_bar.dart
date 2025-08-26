@@ -10,6 +10,7 @@ class RouteBar extends StatefulWidget {
   final VoidCallback onToggleDraw;
   final VoidCallback? onSave;
   final bool hasRoute;
+  final VoidCallback? onRoundtrip;
 
   const RouteBar({
     super.key,
@@ -19,6 +20,7 @@ class RouteBar extends StatefulWidget {
     required this.onToggleDraw,
     this.onSave,
     this.hasRoute = false,
+    this.onRoundtrip,
   });
 
   @override
@@ -28,8 +30,10 @@ class RouteBar extends StatefulWidget {
 class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
   late AnimationController _activityModeController;
   late AnimationController _saveButtonController;
+  late AnimationController _roundtripButtonController;
   late Animation<double> _activityModeAnimation;
   late Animation<double> _saveButtonAnimation;
+  late Animation<double> _roundtripButtonAnimation;
 
   @override
   void initState() {
@@ -42,6 +46,10 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
       duration: const Duration(milliseconds: 300),
       vsync: this,
     );
+    _roundtripButtonController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
     
     _activityModeAnimation = CurvedAnimation(
       parent: _activityModeController,
@@ -51,14 +59,20 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
       parent: _saveButtonController,
       curve: Curves.easeInOut,
     );
+    _roundtripButtonAnimation = CurvedAnimation(
+      parent: _roundtripButtonController,
+      curve: Curves.easeInOut,
+    );
 
     // Initial state
     if (!widget.isDrawing) {
       _activityModeController.value = 1.0;
       _saveButtonController.value = 0.0;
+      _roundtripButtonController.value = 1.0;
     } else {
       _activityModeController.value = 0.0;
       _saveButtonController.value = 1.0;
+      _roundtripButtonController.value = 0.0;
     }
   }
 
@@ -68,12 +82,14 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
     
     // Animate based on drawing state
     if (widget.isDrawing && !oldWidget.isDrawing) {
-      // Started drawing - hide activity mode, show save button
+      // Started drawing - hide activity mode and roundtrip, show save button
       _activityModeController.reverse();
       _saveButtonController.forward();
+      _roundtripButtonController.reverse();
     } else if (!widget.isDrawing && oldWidget.isDrawing) {
-      // Stopped drawing - show activity mode, hide save button if no route
+      // Stopped drawing - show activity mode and roundtrip, hide save button if no route
       _activityModeController.forward();
+      _roundtripButtonController.forward();
       if (!widget.hasRoute) {
         _saveButtonController.reverse();
       }
@@ -91,6 +107,7 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
   void dispose() {
     _activityModeController.dispose();
     _saveButtonController.dispose();
+    _roundtripButtonController.dispose();
     super.dispose();
   }
 
@@ -114,7 +131,7 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
           ],
         ),
         child: AnimatedBuilder(
-          animation: Listenable.merge([_activityModeAnimation, _saveButtonAnimation]),
+          animation: Listenable.merge([_activityModeAnimation, _saveButtonAnimation, _roundtripButtonAnimation]),
           builder: (context, child) {
             return Row(
               children: [
@@ -124,7 +141,7 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
                     sizeFactor: _activityModeAnimation,
                     axis: Axis.horizontal,
                     child: Padding(
-                      padding: const EdgeInsets.only(right: 12),
+                      padding: const EdgeInsets.only(right: 8),
                       child: FadeTransition(
                         opacity: _activityModeAnimation,
                         child: ActivityModeChip(
@@ -136,12 +153,26 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
                   ),
                 // Draw/Stop button (primary action)
                 Expanded(
-                  flex: 2,
                   child: _PrimaryActionButton(
                     isDrawing: widget.isDrawing,
                     onPressed: widget.onToggleDraw,
                   ),
                 ),
+                // Roundtrip button (animated, only when not drawing)
+                if (_roundtripButtonAnimation.value > 0.01 && widget.onRoundtrip != null)
+                  SizeTransition(
+                    sizeFactor: _roundtripButtonAnimation,
+                    axis: Axis.horizontal,
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: FadeTransition(
+                        opacity: _roundtripButtonAnimation,
+                        child: _RoundtripButton(
+                          onPressed: widget.onRoundtrip!,
+                        ),
+                      ),
+                    ),
+                  ),
                 // Save button (animated)
                 if (_saveButtonAnimation.value > 0.01)
                   SizeTransition(
@@ -218,6 +249,51 @@ class _PrimaryActionButton extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RoundtripButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _RoundtripButton({
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [AppColors.pathBlue, AppColors.pathBlue.withOpacity(0.8)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.pathBlue.withOpacity(0.3),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(22),
+          child: Center(
+            child: Icon(
+              Icons.swap_horiz_rounded,
+              color: Colors.white,
+              size: 20,
             ),
           ),
         ),

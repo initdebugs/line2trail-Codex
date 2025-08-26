@@ -6,6 +6,9 @@ import '../../../core/constants/activity_types.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/services/location_service.dart';
 import '../../../shared/services/routing_service.dart';
+import '../../../shared/services/geocoding_service.dart';
+import '../../routes/models/saved_route.dart';
+import '../../routes/services/route_storage_service.dart';
 import '../widgets/waypoint_marker.dart';
 import '../widgets/route_bar.dart';
 import '../widgets/route_tools.dart';
@@ -15,7 +18,11 @@ import '../models/route_drawing_state.dart';
 import '../services/route_editing_service.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final VoidCallback? onRouteSaved;
+  final SavedRoute? routeToLoad;
+  final VoidCallback? onRouteLoaded;
+  
+  const MapScreen({super.key, this.onRouteSaved, this.routeToLoad, this.onRouteLoaded});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -44,7 +51,30 @@ class _MapScreenState extends State<MapScreen> {
     _initializeLocation();
     // Test routing service when app starts
     RoutingService.testRouting();
+    
+    // Load route if provided
+    if (widget.routeToLoad != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        loadSavedRoute(widget.routeToLoad!);
+        widget.onRouteLoaded?.call();
+      });
+    }
   }
+
+  @override
+  void didUpdateWidget(MapScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Check if there's a new route to load
+    if (widget.routeToLoad != null && widget.routeToLoad != oldWidget.routeToLoad) {
+      // Defer the callback to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        loadSavedRoute(widget.routeToLoad!);
+        widget.onRouteLoaded?.call();
+      });
+    }
+  }
+
 
   Future<void> _initializeLocation() async {
     try {
@@ -233,6 +263,7 @@ class _MapScreenState extends State<MapScreen> {
               onToggleDraw: _toggleDrawingMode,
               onSave: _saveRoute,
               hasRoute: _currentRoute.isNotEmpty || _snappedRoute.isNotEmpty,
+              onRoundtrip: _showRoundtripDialog,
             ),
           ),
         ],
@@ -399,27 +430,73 @@ class _MapScreenState extends State<MapScreen> {
     _drawingHistory.clear();
   }
 
-  void _saveRoute() {
+  void _saveRoute() async {
     if (_currentRoute.isEmpty && _snappedRoute.isEmpty) return;
 
     final routeToSave = _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute;
-    final routeName = 'Route ${DateTime.now().toString().substring(5, 16)}';
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${routeToSave.length} point route saved as "$routeName"'),
-        action: SnackBarAction(
-          label: 'View',
-          onPressed: () {
-            // Navigate to routes screen
-            DefaultTabController.of(context).animateTo(1);
-          },
+    
+    // Show save dialog
+    final routeName = await _showSaveRouteDialog();
+    if (routeName == null || routeName.trim().isEmpty) return;
+    
+    try {
+      // Generate route ID and get location info
+      final routeId = await RouteStorageService.generateRouteId();
+      final distance = _getTotalDistance();
+      final time = _getEstimatedTime();
+      final location = await _getApproximateLocation(routeToSave.first);
+      
+      // Create saved route
+      final savedRoute = SavedRoute(
+        id: routeId,
+        name: routeName.trim(),
+        points: List<LatLng>.from(routeToSave),
+        activityType: _selectedActivity,
+        distance: distance,
+        estimatedTime: time,
+        createdAt: DateTime.now(),
+        location: location,
+      );
+      
+      // Save to storage
+      await RouteStorageService.saveRoute(savedRoute);
+      
+      // Notify parent that route was saved
+      widget.onRouteSaved?.call();
+      
+      // Clear current route
+      setState(() {
+        _currentRoute.clear();
+        _snappedRoute.clear();
+        _snapCache.clear();
+        _isDrawingMode = false;
+        _routingError = '';
+      });
+      _drawingHistory.clear();
+      
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Route "$routeName" saved successfully!'),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'View',
+            onPressed: () {
+              // Switch to routes tab
+              DefaultTabController.of(context)?.animateTo(1);
+            },
+          ),
         ),
-      ),
-    );
-
-    // Clear the route after saving
-    _clearRoute();
+      );
+      
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Failed to save route: $e'),
+          backgroundColor: AppColors.errorRed,
+        ),
+      );
+    }
   }
 
   void _centerOnLocation() async {
@@ -1056,5 +1133,109 @@ class _MapScreenState extends State<MapScreen> {
       final minutes = ((timeHours - hours) * 60).round();
       return '${hours}h ${minutes}min';
     }
+  }
+
+  Future<String?> _showSaveRouteDialog() async {
+    final TextEditingController controller = TextEditingController();
+    
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Save Route'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Give your route a name:'),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                hintText: 'Enter route name...',
+                border: OutlineInputBorder(),
+              ),
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final name = controller.text.trim();
+              if (name.isNotEmpty) {
+                Navigator.of(context).pop(name);
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _getApproximateLocation(LatLng point) async {
+    try {
+      // Use reverse geocoding to get the actual city/region name
+      return await GeocodingService.getCityFromCoordinates(point);
+    } catch (e) {
+      debugPrint('Error getting location: $e');
+      return null;
+    }
+  }
+
+  // Public method to load a saved route
+  void loadSavedRoute(SavedRoute savedRoute) {
+    setState(() {
+      _currentRoute = List<LatLng>.from(savedRoute.points);
+      _snappedRoute.clear();
+      _selectedActivity = savedRoute.activityType;
+      _snapCache.clear();
+      _isDrawingMode = false;
+      _routingError = '';
+    });
+    _drawingHistory.clear();
+    _drawingHistory.addState(_currentRoute, 'Loaded saved route');
+    
+    // Center map on the route
+    if (savedRoute.points.isNotEmpty) {
+      final bounds = LatLngBounds.fromPoints(savedRoute.points);
+      _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+    }
+  }
+
+  void _showRoundtripDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Roundtrip Generator'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.construction, size: 48, color: AppColors.textSecondary),
+            SizedBox(height: 16),
+            Text(
+              'Roundtrip route generation is coming soon!',
+              textAlign: TextAlign.center,
+            ),
+            SizedBox(height: 8),
+            Text(
+              'This feature will generate circular routes from your current location.',
+              style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }

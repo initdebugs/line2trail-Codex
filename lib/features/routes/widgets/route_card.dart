@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import '../screens/routes_screen.dart';
+import '../models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/activity_types.dart';
 
 class RouteCard extends StatelessWidget {
-  final RouteData route;
+  final SavedRoute route;
   final VoidCallback onTap;
   final VoidCallback onShare;
   final VoidCallback onDelete;
@@ -39,7 +39,7 @@ class RouteCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
-                      route.activity.icon,
+                      route.activityType.icon,
                       color: AppColors.trailGreen,
                       size: 20,
                     ),
@@ -56,7 +56,7 @@ class RouteCard extends StatelessWidget {
                               ),
                         ),
                         Text(
-                          route.activity.displayName,
+                          route.activityType.displayName,
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: AppColors.textSecondary,
                               ),
@@ -110,20 +110,20 @@ class RouteCard extends StatelessWidget {
                   _buildStat(
                     context,
                     Icons.straighten,
-                    '${route.distance} km',
+                    route.formattedDistance,
                     'Distance',
                   ),
                   _buildStat(
                     context,
-                    Icons.trending_up,
-                    '${route.elevationGain}m',
-                    'Elevation',
+                    Icons.schedule,
+                    route.formattedTime,
+                    'Duration',
                   ),
                   _buildStat(
                     context,
-                    Icons.schedule,
-                    _formatDuration(route.duration),
-                    'Duration',
+                    Icons.location_on,
+                    route.location ?? 'Unknown',
+                    'Location',
                   ),
                 ],
               ),
@@ -133,26 +133,9 @@ class RouteCard extends StatelessWidget {
               // Footer
               Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getDifficultyColor(route.difficulty).withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _getDifficultyColor(route.difficulty).withValues(alpha: 0.3),
-                      ),
-                    ),
-                    child: Text(
-                      route.difficulty,
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                            color: _getDifficultyColor(route.difficulty),
-                            fontWeight: FontWeight.w500,
-                          ),
-                    ),
-                  ),
                   const Spacer(),
                   Text(
-                    _formatDate(route.createdAt),
+                    route.formattedDate,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: AppColors.textSecondary,
                         ),
@@ -196,39 +179,4 @@ class RouteCard extends StatelessWidget {
     );
   }
 
-  Color _getDifficultyColor(String difficulty) {
-    switch (difficulty.toLowerCase()) {
-      case 'easy':
-        return AppColors.elevationGain;
-      case 'moderate':
-        return AppColors.warningAmber;
-      case 'hard':
-      case 'difficult':
-        return AppColors.errorRed;
-      default:
-        return AppColors.textSecondary;
-    }
-  }
-
-  String _formatDuration(Duration duration) {
-    if (duration.inHours > 0) {
-      return '${duration.inHours}h ${duration.inMinutes % 60}m';
-    }
-    return '${duration.inMinutes}m';
-  }
-
-  String _formatDate(DateTime date) {
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inDays == 0) {
-      return 'Today';
-    } else if (difference.inDays == 1) {
-      return 'Yesterday';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
-  }
 }
