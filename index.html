@@ -1,0 +1,3420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cycling Route Planner – Netherlands</title>
+
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<!-- External libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+
+<style>
+  :root {
+    --bg: #0f1419;
+    --bg-elevated: #1a1f2e;
+    --bg-panel: #242938;
+    --bg-card: #2a2f3e;
+    --bg-hover: #343a4a;
+    --text-primary: #ffffff;
+    --text-secondary: #a8b2c8;
+    --text-muted: #6b7280;
+    --accent: #00d4aa;
+    --accent-hover: #00c29a;
+    --accent-bg: rgba(0, 212, 170, 0.1);
+    --warning: #ff6b35;
+    --danger: #ff4757;
+    --success: #2ed573;
+    --border: #3a4052;
+    --border-light: rgba(255, 255, 255, 0.1);
+    --shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 25px 60px rgba(0, 0, 0, 0.4);
+    --radius: 16px;
+    --radius-sm: 8px;
+  }
+
+  /* ================== STATUS BAR ================== */
+  
+  .status-bar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    backdrop-filter: blur(10px);
+    max-width: calc(100vw - 40px);
+    text-align: center;
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    transition: all 0.3s ease;
+  }
+
+  .status-bar.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Dark overlay for themes */
+  .theme-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg);
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .theme-overlay.transitioning {
+    opacity: 0.8;
+    pointer-events: all;
+  }
+
+  [data-theme="light"] {
+    --bg: #f8fafc;
+    --bg-elevated: #ffffff;
+    --bg-panel: #ffffff;
+    --bg-card: #f1f5f9;
+    --bg-hover: #e2e8f0;
+    --text-primary: #1e293b;
+    --text-secondary: #475569;
+    --text-muted: #64748b;
+    --accent: #0ea5e9;
+    --accent-hover: #0284c7;
+    --accent-bg: rgba(14, 165, 233, 0.1);
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+    --border: #e2e8f0;
+    --border-light: rgba(0, 0, 0, 0.1);
+    --shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 25px 60px rgba(0, 0, 0, 0.15);
+  }
+
+  * { box-sizing: border-box; }
+  
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+  }
+
+  #map {
+    height: 100vh;
+    width: 100vw;
+    position: absolute;
+    top: 0;
+    left: 0;
+    transition: filter 0.3s ease;
+    z-index: 0;
+  }
+
+  /* Ensure Leaflet controls work properly */
+  .leaflet-control-container {
+    pointer-events: none;
+  }
+  
+  .leaflet-control {
+    pointer-events: auto;
+  }
+
+  .map-dimmed { filter: brightness(0.7) blur(1px); }
+
+  /* ================== MAIN PANELS ================== */
+  
+  .panel {
+    position: absolute;
+    z-index: 1000;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    backdrop-filter: blur(20px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .main-panel {
+    top: 20px;
+    left: 20px;
+    width: 380px;
+    max-height: calc(100vh - 40px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .panel-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(135deg, var(--bg-elevated), var(--bg-panel));
+  }
+
+  .panel-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .panel-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .section {
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section:last-child { border-bottom: none; }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin: 0 0 16px 0;
+  }
+
+  /* ================== STATS GRID ================== */
+  
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+
+  .stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    text-align: center;
+    transition: all 0.2s ease;
+  }
+
+  .stat-card:hover {
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+  }
+
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0;
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0 0 0;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  /* ================== QUALITY BAR ================== */
+  
+  .quality-section {
+    margin: 16px 0;
+  }
+
+  .quality-bar {
+    height: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin: 8px 0;
+  }
+
+  .quality-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--success), var(--warning));
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .quality-legend {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 8px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+  }
+
+  .legend-dot.green { background: var(--success); }
+  .legend-dot.orange { background: var(--warning); }
+
+  /* ================== BUTTONS & CONTROLS ================== */
+  
+  .button-group {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+    margin: 16px 0;
+  }
+
+  .btn {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 16px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    text-decoration: none;
+    user-select: none;
+  }
+
+  .btn:hover {
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+  }
+
+  .btn:active {
+    transform: translateY(0);
+  }
+
+  .btn.primary {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+  }
+
+  .btn.primary:hover {
+    background: var(--accent-hover);
+  }
+
+  .btn.danger {
+    background: var(--danger);
+    color: white;
+    border-color: var(--danger);
+  }
+
+  .btn.danger:hover {
+    background: #e63946;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+  }
+
+  .icon-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  /* ================== SETTINGS PANEL ================== */
+  
+  .settings-panel {
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    max-height: calc(100vh - 40px);
+    transform: translateX(340px);
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .settings-panel.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .settings-panel.pushed {
+    transform: translateX(-340px);
+  }
+
+  .route-alternatives-panel {
+    top: 20px;
+    right: 20px;
+    width: 320px;
+    max-height: calc(100vh - 40px);
+    transform: translateX(340px);
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1001;
+  }
+
+  .route-alternatives-panel.open {
+    transform: translateX(0);
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .form-group {
+    margin: 16px 0;
+  }
+
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+
+  .form-control {
+    width: 100%;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px;
+    color: var(--text-primary);
+    font-size: 14px;
+    transition: all 0.2s ease;
+  }
+
+  .form-control:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-bg);
+  }
+
+  .range-input {
+    -webkit-appearance: none;
+    height: 6px;
+    background: var(--bg-card);
+    border-radius: 3px;
+    outline: none;
+  }
+
+  .range-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 20px;
+    height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+
+  .range-input::-moz-range-thumb {
+    width: 20px;
+    height: 20px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+  }
+
+  .switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 24px;
+  }
+
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    transition: 0.3s;
+    border-radius: 12px;
+  }
+
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--text-muted);
+    transition: 0.3s;
+    border-radius: 50%;
+  }
+
+  input:checked + .slider {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+  }
+
+  input:checked + .slider:before {
+    transform: translateX(24px);
+    background: var(--accent);
+  }
+
+  /* ================== FLOATING CONTROLS ================== */
+  
+  .floating-controls {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .map-controls {
+    position: absolute;
+    top: 24px;
+    right: 24px;
+    z-index: 1000;
+    display: flex;
+    gap: 12px;
+    margin-top: 80px; /* Account for zoom controls */
+  }
+
+  /* ================== MODALS ================== */
+  
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.3s ease;
+  }
+
+  .modal-overlay.open {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .modal {
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: hidden;
+    transform: scale(0.9) translateY(20px);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .modal-overlay.open .modal {
+    transform: scale(1) translateY(0);
+  }
+
+  .modal-header {
+    padding: 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .modal-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.2s ease;
+  }
+
+  .modal-close:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .modal-body {
+    padding: 24px;
+    overflow-y: auto;
+    max-height: 60vh;
+  }
+
+  /* ================== ROUTE HISTORY ================== */
+  
+  .history-item {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .history-item:hover {
+    background: var(--bg-hover);
+    transform: translateY(-1px);
+  }
+
+  .history-title {
+    font-weight: 600;
+    margin: 0 0 8px 0;
+    color: var(--text-primary);
+  }
+
+  .history-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .history-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* ================== QR CODE ================== */
+  
+  .qr-container {
+    text-align: center;
+    padding: 20px;
+  }
+
+  .qr-code {
+    background: white;
+    padding: 20px;
+    border-radius: var(--radius-sm);
+    display: inline-block;
+    margin: 16px 0;
+  }
+
+  /* ================== ANIMATIONS ================== */
+  
+  .route-drawing {
+    animation: route-draw 0.8s ease-out;
+  }
+
+  @keyframes route-draw {
+    0% {
+      stroke-dasharray: 0 1000;
+    }
+    100% {
+      stroke-dasharray: 1000 0;
+    }
+  }
+
+  .pulse {
+    animation: pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.7; transform: scale(1.1); }
+  }
+
+  .preview-marker {
+    z-index: 1000 !important;
+  }
+
+  .spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* ================== SEGMENT INSPECTOR ================== */
+  
+  .segment-info {
+    position: absolute;
+    z-index: 1500;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    min-width: 250px;
+    box-shadow: var(--shadow);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(10px);
+    transition: all 0.2s ease;
+  }
+
+  .segment-info.show {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+  }
+
+  .segment-tags {
+    display: grid;
+    gap: 8px;
+  }
+
+  .tag-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 12px;
+  }
+
+  .tag-key {
+    color: var(--text-muted);
+  }
+
+  .tag-value {
+    color: var(--text-primary);
+    font-weight: 500;
+  }
+
+  /* ================== ROUTE SELECTION ================== */
+  
+  .route-option {
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 16px;
+    margin-bottom: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+  }
+
+  .route-option:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+
+  .route-option.selected {
+    border-color: var(--accent);
+    background: var(--accent-bg);
+    box-shadow: 0 0 0 3px rgba(0, 212, 170, 0.1);
+  }
+
+  .route-option.selected::before {
+    content: '👁️';
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    font-size: 20px;
+    opacity: 0.8;
+  }
+
+  .route-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .route-title {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .route-badge {
+    background: var(--accent);
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .route-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 12px;
+    margin-top: 8px;
+    font-size: 12px;
+  }
+
+  .route-stat {
+    text-align: center;
+  }
+
+  .route-stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+    display: block;
+  }
+
+  .route-stat-label {
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  .route-preview {
+    margin-top: 12px;
+    height: 120px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-bar {
+    background: var(--bg-card);
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 16px 0;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s ease;
+  }
+  
+  @media (max-width: 768px) {
+    .main-panel {
+      width: calc(100vw - 40px);
+      max-width: 380px;
+    }
+
+    .settings-panel {
+      width: calc(100vw - 40px);
+      max-width: 320px;
+      right: 20px;
+      transform: translateX(calc(100vw - 20px));
+    }
+
+    .map-controls {
+      right: 20px;
+      top: 20px;
+    }
+
+    .floating-controls {
+      right: 20px;
+      bottom: 20px;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ================== RESPONSIVE ================== */
+  
+  @media (max-width: 768px) {
+    .main-panel {
+      width: calc(100vw - 40px);
+      max-width: 380px;
+    }
+
+    .settings-panel {
+      width: calc(100vw - 40px);
+      max-width: 320px;
+      right: 20px;
+      transform: translateX(calc(100vw - 20px));
+    }
+
+    .settings-panel.open {
+      transform: translateX(0);
+    }
+
+    .settings-panel.pushed {
+      transform: translateX(calc(-100vw + 20px));
+    }
+
+    .route-alternatives-panel {
+      width: calc(100vw - 40px);
+      max-width: 320px;
+      right: 20px;
+      transform: translateX(calc(100vw - 20px));
+    }
+
+    .route-alternatives-panel.open {
+      transform: translateX(0);
+    }
+
+    .map-controls {
+      right: 20px;
+      top: 20px;
+    }
+
+    .floating-controls {
+      right: 20px;
+      bottom: 20px;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+    
+    .route-stats {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
+  
+  .status-bar {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 12px 20px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    backdrop-filter: blur(10px);
+    max-width: calc(100vw - 40px);
+    text-align: center;
+    opacity: 0;
+    transform: translateX(-50%) translateY(20px);
+    transition: all 0.3s ease;
+  }
+
+  .status-bar.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Dark overlay for themes */
+  .theme-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: var(--bg);
+    z-index: 10000;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+
+  .theme-overlay.transitioning {
+    opacity: 0.8;
+    pointer-events: all;
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<div id="map"></div>
+
+<!-- Theme transition overlay -->
+<div class="theme-overlay" id="themeOverlay"></div>
+
+<!-- Main Control Panel -->
+<div class="panel main-panel" id="mainPanel">
+  <div class="panel-header">
+    <h1 class="panel-title">
+      🚴 Route Planner
+    </h1>
+    <div style="display: flex; gap: 8px;">
+      <button class="icon-btn" id="themeToggle" title="Toggle theme">🌙</button>
+      <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
+    </div>
+  </div>
+  
+  <div class="panel-content">
+    <!-- Route Stats -->
+    <div class="section">
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="distanceValue">0.0</div>
+          <div class="stat-label">Kilometers</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="timeValue">0m</div>
+          <div class="stat-label">Est. Time</div>
+        </div>
+      </div>
+      
+      <div class="quality-section">
+        <div class="section-title">Route Quality</div>
+        <div class="quality-bar">
+          <div class="quality-fill" id="qualityFill" style="width: 0%"></div>
+        </div>
+        <div class="quality-legend">
+          <div class="legend-item">
+            <div class="legend-dot green"></div>
+            <span>Bike Infrastructure</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-dot orange"></div>
+            <span>Regular Roads</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Route Controls -->
+    <div class="section">
+      <div class="section-title">Route Controls</div>
+      <div class="button-group">
+        <button class="btn" id="undoBtn" disabled>↶ Undo</button>
+        <button class="btn" id="redoBtn" disabled>↷ Redo</button>
+        <button class="btn danger" id="clearBtn" disabled>✖ Clear</button>
+        <button class="btn" id="locateBtn">📍 My Location</button>
+      </div>
+    </div>
+
+    <!-- Route Tools -->
+    <div class="section">
+      <div class="section-title">Route Tools</div>
+      <div class="button-group">
+        <button class="btn primary" id="exportBtn" disabled>⬇ Export GPX</button>
+        <label class="btn" for="gpxFile">⬆ Import GPX</label>
+        <button class="btn" id="roundtripBtn">🔄 Roundtrip</button>
+        <button class="btn" id="historyBtn">📚 History</button>
+        <button class="btn" id="qrBtn" disabled>📱 QR Code</button>
+        <button class="btn" id="shareBtn" disabled>🔗 Share</button>
+      </div>
+      <input type="file" id="gpxFile" accept=".gpx,application/gpx+xml,application/xml,text/xml" style="display: none;" />
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="section">
+      <div class="section-title">Map Tools</div>
+      <div class="button-group">
+        <button class="btn" id="toggleNetworkBtn">🗺️ Network</button>
+        <button class="btn" id="fetchHereBtn">↻ Fetch Area</button>
+        <button class="btn" id="segmentModeBtn">🔍 Inspect</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Route Alternatives Panel -->
+<div class="panel route-alternatives-panel" id="routeAlternativesPanel">
+  <div class="panel-header">
+    <h2 class="panel-title">Route Alternatives</h2>
+    <button class="modal-close" id="closeAlternatives">×</button>
+  </div>
+  
+  <div class="panel-content">
+    <div class="section">
+      <div class="section-title">Generated Routes</div>
+      <div id="alternativesList"></div>
+      <div class="button-group" style="margin-top: 16px;">
+        <button class="btn" id="regenerateRoutesBtn">🔄 Generate New</button>
+        <button class="btn danger" id="clearAlternativesBtn">✖ Clear All</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="panel settings-panel" id="settingsPanel">
+  <div class="panel-header">
+    <h2 class="panel-title">Settings</h2>
+    <button class="modal-close" id="closeSettings">×</button>
+  </div>
+  
+  <div class="panel-content">
+    <div class="section">
+      <div class="section-title">Routing Preferences</div>
+      
+      <div class="form-group">
+        <label class="form-label">Snapping Radius: <span id="snapValue">75</span>m</label>
+        <input type="range" class="form-control range-input" id="snapRadius" min="10" max="200" value="75">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label">Cycling Speed (km/h)</label>
+        <input type="number" class="form-control" id="cyclingSpeed" value="20" min="5" max="50">
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Auto-fetch Network</span>
+          <div class="switch">
+            <input type="checkbox" id="autoFetch" checked>
+            <span class="slider"></span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Map Settings</div>
+      
+      <div class="form-group">
+        <label class="form-label">Base Map</label>
+        <select class="form-control" id="baseMap">
+          <option value="osm">OpenStreetMap</option>
+          <option value="satellite">Satellite</option>
+          <option value="terrain">Terrain</option>
+          <option value="topo">Topographic</option>
+        </select>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Show Network Overlay</span>
+          <div class="switch">
+            <input type="checkbox" id="showNetwork">
+            <span class="slider"></span>
+          </div>
+        </label>
+      </div>
+      
+      <div class="form-group">
+        <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Animate Route Drawing</span>
+          <div class="switch">
+            <input type="checkbox" id="animateRoutes" checked>
+            <span class="slider"></span>
+          </div>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Advanced</div>
+      
+      <div class="form-group">
+        <label class="form-label" style="display: flex; align-items: center; justify-content: space-between;">
+          <span>Draggable Waypoints</span>
+          <div class="switch">
+            <input type="checkbox" id="draggableWaypoints" checked>
+            <span class="slider"></span>
+          </div>
+        </label>
+      </div>
+      
+      <div class="button-group">
+        <button class="btn danger" id="clearHistoryBtn">🗑️ Clear History</button>
+        <button class="btn" id="exportSettingsBtn">⬇ Export Settings</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Map Controls -->
+<div class="map-controls">
+  <select class="btn" id="mapLayerSelect" style="min-width: 120px;">
+    <option value="osm">Street Map</option>
+    <option value="satellite">Satellite</option>
+    <option value="terrain">Terrain</option>
+    <option value="topo">Topographic</option>
+  </select>
+</div>
+
+<!-- Floating Controls -->
+<div class="floating-controls">
+  <button class="btn icon-btn" id="zoomToRouteBtn" title="Zoom to route" disabled>🎯</button>
+  <button class="btn icon-btn" id="fullscreenBtn" title="Fullscreen">⛶</button>
+</div>
+
+<!-- Status Bar -->
+<div class="status-bar" id="statusBar">
+  Click on the map to add waypoints. Routing prioritizes Dutch cycling infrastructure.
+</div>
+
+<!-- Segment Inspector -->
+<div class="segment-info" id="segmentInfo">
+  <div class="segment-tags" id="segmentTags"></div>
+</div>
+
+<!-- Modals -->
+
+<!-- Route History Modal -->
+<div class="modal-overlay" id="historyModal">
+  <div class="modal" style="width: 600px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Route History</h3>
+      <button class="modal-close" data-modal="historyModal">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="historyList">
+        <p style="text-align: center; color: var(--text-muted); padding: 40px;">No saved routes yet. Create a route to see it here!</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- QR Code Modal -->
+<div class="modal-overlay" id="qrModal">
+  <div class="modal" style="width: 400px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Share Route</h3>
+      <button class="modal-close" data-modal="qrModal">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="qr-container">
+        <p style="text-align: center; color: var(--text-muted); margin-bottom: 16px;">
+          Route data encoded for sharing
+        </p>
+        <div class="qr-code" id="qrCode"></div>
+        <div class="button-group" style="margin-top: 20px;">
+          <button class="btn primary" id="downloadGpxPhoneBtn">📱 Download GPX</button>
+          <button class="btn" id="copyDataBtn">📋 Copy Data</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Roundtrip Generator Modal -->
+<div class="modal-overlay" id="roundtripModal">
+  <div class="modal" style="width: 500px;">
+    <div class="modal-header">
+      <h3 class="modal-title">Generate Roundtrip</h3>
+      <button class="modal-close" data-modal="roundtripModal">×</button>
+    </div>
+    <div class="modal-body">
+      <div id="roundtripForm">
+        <div class="form-group">
+          <label class="form-label">Distance (km)</label>
+          <input type="number" class="form-control" id="roundtripDistance" value="20" min="2" max="100" step="1">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Starting Point</label>
+          <select class="form-control" id="roundtripStart">
+            <option value="current">Current Map Center</option>
+            <option value="location">My Location</option>
+            <option value="click">Click on Map</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Route Variety</label>
+          <select class="form-control" id="roundtripStyle">
+            <option value="mixed">Mixed (3 different routes)</option>
+            <option value="scenic">Scenic Focus</option>
+            <option value="direct">Direct & Efficient</option>
+            <option value="explore">Maximum Exploration</option>
+          </select>
+        </div>
+        <div class="button-group" style="margin-top: 24px;">
+          <button class="btn primary" id="generateRoundtripBtn">🔄 Generate Routes</button>
+          <button class="btn" data-modal="roundtripModal">Cancel</button>
+        </div>
+      </div>
+      
+      <!-- Loading State -->
+      <div id="roundtripLoading" style="display: none; text-align: center; padding: 40px;">
+        <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 20px;"></div>
+        <h4 style="margin: 0 0 10px 0;">Generating Roundtrip Routes...</h4>
+        <p style="color: var(--text-muted); margin: 0 0 16px 0;" id="loadingProgress">Analyzing network and planning routes...</p>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width: 0%;"></div>
+        </div>
+      </div>
+      
+      <!-- Route Selection -->
+      <div id="routeSelection" style="display: none;">
+        <div style="text-align: center; padding: 30px 20px;">
+          <div style="font-size: 32px; margin-bottom: 16px;">✅</div>
+          <h4 style="margin: 0 0 8px 0; color: var(--success);">Routes Generated!</h4>
+          <p style="color: var(--text-muted); font-size: 13px; margin: 0;">Opening alternatives panel...</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   ENHANCED CYCLING ROUTE PLANNER
+   - Modern UI with dark/light themes
+   - Draggable waypoints
+   - Route history with localStorage
+   - QR code sharing
+   - Spatial indexing with rbush
+   - Animated route drawing
+   - Segment inspection
+   - Multiple map layers
+   - Roundtrip generation
+============================================================ */
+
+// Global state
+const state = {
+  theme: localStorage.getItem('theme') || 'dark',
+  settings: {
+    snapRadius: 75,
+    cyclingSpeed: 20,
+    autoFetch: true,
+    showNetwork: false,
+    animateRoutes: true,
+    draggableWaypoints: true
+  },
+  viaPoints: [],
+  undoStack: [],
+  redoStack: [],
+  routeHistory: JSON.parse(localStorage.getItem('routeHistory') || '[]'),
+  isSegmentInspectMode: false,
+  currentRoute: null,
+  spatialNodes: [] // Simple array for spatial lookups
+};
+
+// Map setup with multiple layers
+const map = L.map('map', { 
+  zoomControl: true,
+  preferCanvas: true
+}).setView([52.2, 5.3], 8);
+
+// Add zoom control to top-right
+map.zoomControl.setPosition('topright');
+
+// Map layers
+const mapLayers = {
+  osm: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors',
+    maxZoom: 19
+  }),
+  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri, Digital Globe, NASA',
+    maxZoom: 19
+  }),
+  terrain: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Shaded_Relief/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri',
+    maxZoom: 16
+  }),
+  topo: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', {
+    attribution: '© Esri',
+    maxZoom: 19
+  })
+};
+
+// Add default layer
+let currentBaseLayer = mapLayers.osm;
+currentBaseLayer.addTo(map);
+
+// Layer groups
+const layers = {
+  network: L.layerGroup(),
+  routeOutline: L.layerGroup(),
+  route: L.layerGroup(),
+  waypoints: L.layerGroup(),
+  segments: L.layerGroup(),
+  preview: L.layerGroup() // For snap preview
+};
+
+// Add all layer groups to map
+Object.values(layers).forEach(layer => layer.addTo(map));
+
+// Preview marker for snapping feedback
+let previewMarker = null;
+
+// Graph data structure
+const graph = {
+  nodes: new Map(),
+  bbox: null
+};
+
+const fetchedBBoxes = [];
+
+/* ============================================================
+   UTILITY FUNCTIONS
+============================================================ */
+
+function nodeId(lat, lon) {
+  return `${lat.toFixed(6)},${lon.toFixed(6)}`;
+}
+
+function haversine(a, b) {
+  const toRad = d => d * Math.PI / 180;
+  const R = 6371000;
+  const dLat = toRad(b.lat - a.lat);
+  const dLon = toRad(b.lon - a.lon);
+  const lat1 = toRad(a.lat), lat2 = toRad(b.lat);
+  const s = Math.sin(dLat/2)**2 + Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(s));
+}
+
+function ll(latlng) {
+  return {lat: latlng.lat, lon: latlng.lng};
+}
+
+function boundsAround(latlng, halfMeters) {
+  const degLat = halfMeters / 111320;
+  const cosLat = Math.max(0.2, Math.cos(latlng.lat * Math.PI/180));
+  const degLon = halfMeters / (111320 * cosLat);
+  return L.latLngBounds(
+    [latlng.lat - degLat, latlng.lng - degLon],
+    [latlng.lat + degLat, latlng.lng + degLon]
+  );
+}
+
+function costFactor(tags) {
+  const h = tags.highway || '';
+  const cycleway = tags.cycleway || '';
+  const bicycle = (tags.bicycle || '').toLowerCase();
+  const segregated = tags.segregated === 'yes';
+
+  if (/^(motorway|trunk|motorway_link|trunk_link)$/.test(h)) return Infinity;
+  if (bicycle === 'no' || bicycle === 'private') return Infinity;
+
+  if (h === 'cycleway' || bicycle === 'designated' || cycleway === 'track' || segregated) return 0.7;
+  if (h === 'path' && (bicycle === 'yes' || bicycle === 'designated')) return 0.9;
+  if ((h === 'residential' || h === 'living_street' || h === 'service') && (cycleway==='lane' || bicycle==='yes')) return 1.0;
+  if ((h === 'tertiary' || h === 'secondary' || h==='primary') && (cycleway==='lane' || bicycle==='yes')) return 1.6;
+  if (h === 'primary') return 3.0;
+  if (h === 'secondary') return 2.4;
+  if (h === 'tertiary') return 1.9;
+  return 1.6;
+}
+
+function isBikeInfra(tags) {
+  const h = tags.highway || '';
+  const cycleway = tags.cycleway || '';
+  const bicycle = (tags.bicycle || '').toLowerCase();
+  const segregated = tags.segregated === 'yes';
+  return h==='cycleway' || bicycle==='designated' || cycleway==='track' || cycleway==='lane' || 
+         (h==='path' && (bicycle==='yes'||bicycle==='designated')) || segregated;
+}
+
+/* ============================================================
+   UI MANAGEMENT
+============================================================ */
+
+function showStatus(message, duration = 3000) {
+  const statusBar = document.getElementById('statusBar');
+  statusBar.innerHTML = message;
+  statusBar.classList.add('show');
+  
+  if (duration > 0) {
+    setTimeout(() => {
+      statusBar.classList.remove('show');
+    }, duration);
+  }
+}
+
+function updateStats(totalMeters = 0, pctBike = 0) {
+  const km = totalMeters / 1000;
+  document.getElementById('distanceValue').textContent = km.toFixed(1);
+  
+  const hours = km / state.settings.cyclingSpeed;
+  const mins = Math.round(hours * 60);
+  document.getElementById('timeValue').textContent = 
+    mins < 60 ? `${mins}m` : `${Math.floor(mins/60)}h ${mins%60}m`;
+  
+  const pct = Math.round(pctBike * 100);
+  document.getElementById('qualityFill').style.width = `${pct}%`;
+  document.getElementById('qualityFill').title = `${pct}% on cycling infrastructure`;
+  
+  // Update button states
+  const hasRoute = totalMeters > 0;
+  ['exportBtn', 'qrBtn', 'shareBtn', 'zoomToRouteBtn'].forEach(id => {
+    document.getElementById(id).disabled = !hasRoute;
+  });
+  
+  document.getElementById('clearBtn').disabled = state.viaPoints.length === 0;
+  document.getElementById('undoBtn').disabled = state.undoStack.length === 0;
+  document.getElementById('redoBtn').disabled = state.redoStack.length === 0;
+}
+
+function toggleTheme() {
+  const currentTheme = document.body.getAttribute('data-theme');
+  const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+  
+  // Show transition overlay
+  const overlay = document.getElementById('themeOverlay');
+  overlay.classList.add('transitioning');
+  
+  setTimeout(() => {
+    document.body.setAttribute('data-theme', newTheme);
+    state.theme = newTheme;
+    localStorage.setItem('theme', newTheme);
+    
+    // Update theme button
+    document.getElementById('themeToggle').textContent = newTheme === 'dark' ? '☀️' : '🌙';
+    
+    setTimeout(() => {
+      overlay.classList.remove('transitioning');
+    }, 150);
+  }, 150);
+}
+
+function openModal(modalId) {
+  document.getElementById(modalId).classList.add('open');
+  document.getElementById('map').classList.add('map-dimmed');
+}
+
+function closeModal(modalId) {
+  document.getElementById(modalId).classList.remove('open');
+  document.getElementById('map').classList.remove('map-dimmed');
+}
+
+function closeAllModals() {
+  document.querySelectorAll('.modal-overlay').forEach(modal => {
+    modal.classList.remove('open');
+  });
+  document.getElementById('map').classList.remove('map-dimmed');
+}
+
+/* ============================================================
+   ROUTE ALTERNATIVES PANEL
+============================================================ */
+
+function showAlternativesPanel() {
+  const panel = document.getElementById('routeAlternativesPanel');
+  const settingsPanel = document.getElementById('settingsPanel');
+  
+  // Close settings panel if open
+  settingsPanel.classList.remove('open');
+  
+  // Open alternatives panel
+  panel.classList.add('open');
+  
+  // Push settings panel if it was open
+  if (settingsPanel.classList.contains('open')) {
+    settingsPanel.classList.add('pushed');
+  }
+}
+
+function hideAlternativesPanel() {
+  const panel = document.getElementById('routeAlternativesPanel');
+  const settingsPanel = document.getElementById('settingsPanel');
+  
+  panel.classList.remove('open');
+  settingsPanel.classList.remove('pushed');
+  
+  // Clear preview when closing
+  clearRoutePreview();
+  roundtripGeneration.currentPreviewIndex = -1;
+}
+
+function previewRoundtripRoute(index) {
+  const route = roundtripGeneration.generatedRoutes[index];
+  if (!route) return;
+  
+  // Clear existing preview
+  clearRoutePreview();
+  
+  // Update selected state in UI
+  document.querySelectorAll('.route-option').forEach((el, i) => {
+    if (i === index) {
+      el.classList.add('selected');
+    } else {
+      el.classList.remove('selected');
+    }
+  });
+  
+  // Create preview layer
+  roundtripGeneration.previewLayer = L.layerGroup().addTo(map);
+  
+  // Draw the preview route
+  const segments = route.route.segments;
+  let currentPath = [];
+  let currentBike = null;
+  
+  segments.forEach(seg => {
+    if (currentBike !== seg.bike) {
+      if (currentPath.length > 0) {
+        // Draw accumulated path
+        L.polyline(currentPath, {
+          color: currentBike ? '#00d4aa' : '#ff6b35',
+          weight: 4,
+          opacity: 0.7,
+          dashArray: '10, 5',
+          lineJoin: 'round',
+          lineCap: 'round'
+        }).addTo(roundtripGeneration.previewLayer);
+      }
+      currentPath = [seg.from];
+      currentBike = seg.bike;
+    }
+    currentPath.push(seg.to);
+  });
+  
+  // Draw last segment
+  if (currentPath.length > 0) {
+    L.polyline(currentPath, {
+      color: currentBike ? '#00d4aa' : '#ff6b35',
+      weight: 4,
+      opacity: 0.7,
+      dashArray: '10, 5',
+      lineJoin: 'round',
+      lineCap: 'round'
+    }).addTo(roundtripGeneration.previewLayer);
+  }
+  
+  // Add waypoint markers
+  route.waypoints.forEach((wp, i) => {
+    L.circleMarker([wp.lat, wp.lon], {
+      radius: 6,
+      color: '#ffffff',
+      fillColor: '#0ea5e9',
+      fillOpacity: 0.8,
+      weight: 2
+    }).addTo(roundtripGeneration.previewLayer);
+  });
+  
+  // Zoom to preview route
+  const bounds = L.latLngBounds(route.waypoints.map(wp => [wp.lat, wp.lon]));
+  map.fitBounds(bounds, { padding: [50, 50] });
+  
+  roundtripGeneration.currentPreviewIndex = index;
+  showStatus(`Previewing: ${route.name} - ${(route.actualDistance / 1000).toFixed(1)}km`);
+}
+
+function clearRoutePreview() {
+  if (roundtripGeneration.previewLayer) {
+    map.removeLayer(roundtripGeneration.previewLayer);
+    roundtripGeneration.previewLayer = null;
+  }
+}
+
+function applyRoundtripRoute(index) {
+  const route = roundtripGeneration.generatedRoutes[index];
+  if (!route) return;
+  
+  // Clear preview first
+  clearRoutePreview();
+  
+  // Clear existing route
+  clearRoute();
+  
+  // Add waypoints from the selected roundtrip
+  route.waypoints.forEach(wp => {
+    addViaPoint(wp, true);
+  });
+  
+  // Redraw the route
+  redrawRoute();
+  
+  // Close panels
+  hideAlternativesPanel();
+  closeModal('roundtripModal');
+  
+  // Save to history
+  setTimeout(() => saveRoute(), 500);
+  
+  // Zoom to route
+  const bounds = L.latLngBounds(route.waypoints.map(wp => [wp.lat, wp.lon]));
+  map.fitBounds(bounds, { padding: [50, 50] });
+  
+  showStatus(`Applied roundtrip: ${route.name} - ${(route.actualDistance / 1000).toFixed(1)}km`);
+  
+  // Clear generation data
+  roundtripGeneration.generatedRoutes = [];
+  roundtripGeneration.currentPreviewIndex = -1;
+}
+
+/* ============================================================
+   SPATIAL INDEXING FOR FAST SNAPPING
+============================================================ */
+
+function updateSpatialIndex() {
+  // Simple spatial array - we'll optimize this later
+  state.spatialNodes = Array.from(graph.nodes.values());
+}
+
+function nearestNode(latlng) {
+  if (state.spatialNodes.length === 0) return null;
+  
+  const p = ll(latlng);
+  let best = null;
+  let bestD = Infinity;
+  
+  // Use a smaller, more reasonable snap radius for better UX
+  const maxDist = Math.min(state.settings.snapRadius, 50); // Cap at 50m for better UX
+  
+  for (const node of state.spatialNodes) {
+    // Quick distance check (faster than haversine for initial filtering)
+    const dLat = Math.abs(node.lat - p.lat);
+    const dLon = Math.abs(node.lon - p.lon);
+    if (dLat > 0.0005 || dLon > 0.0005) continue; // Tighter filtering for better UX
+    
+    const d = haversine(p, {lat: node.lat, lon: node.lon});
+    if (d < bestD && d <= maxDist) {
+      bestD = d;
+      best = node;
+    }
+    
+    // Early termination if we find a very close node
+    if (d < 5) break; // Even closer for better UX
+  }
+  
+  return best;
+}
+
+// Add mouse hover preview for waypoint snapping
+function showSnapPreview(latlng) {
+  const node = nearestNode(latlng);
+  
+  // Clear existing preview
+  if (previewMarker) {
+    layers.preview.removeLayer(previewMarker);
+    previewMarker = null;
+  }
+  
+  if (node) {
+    // Show preview marker at snap location
+    previewMarker = L.circleMarker([node.lat, node.lon], {
+      radius: 6,
+      color: '#ffffff',
+      fillColor: '#00d4aa',
+      fillOpacity: 0.7,
+      weight: 2,
+      className: 'preview-marker pulse'
+    }).addTo(layers.preview);
+    
+    // Show distance if significant snap distance
+    const clickDist = haversine(ll(latlng), {lat: node.lat, lon: node.lon});
+    if (clickDist > 10) {
+      previewMarker.bindTooltip(`Snap to network (${Math.round(clickDist)}m)`, {
+        permanent: false,
+        direction: 'top',
+        offset: [0, -10]
+      }).openTooltip();
+    }
+  }
+}
+
+function clearSnapPreview() {
+  if (previewMarker) {
+    layers.preview.removeLayer(previewMarker);
+    previewMarker = null;
+  }
+}
+
+/* ============================================================
+   NETWORK FETCHING
+============================================================ */
+
+const OVERPASS_ENDPOINTS = [
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.openstreetmap.fr/api/interpreter'
+];
+
+const PROXY_WRAPPERS = [
+  (u) => u,
+  (u) => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u),
+  (u) => 'https://cors.isomorphic-git.org/' + u
+];
+
+function abortableFetch(url, opts = {}, ms = 25000) {
+  const ctrl = new AbortController();
+  const id = setTimeout(() => ctrl.abort(new Error('Timeout')), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(id));
+}
+
+async function fetchJSONWithFallbacks(url) {
+  let lastErr = null;
+  for (const wrap of PROXY_WRAPPERS) {
+    const proxied = wrap(url);
+    try {
+      const res = await abortableFetch(proxied, { 
+        method: 'GET', 
+        mode: 'cors', 
+        cache: 'no-store'
+      }, 25000);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!data || !Array.isArray(data.elements)) throw new Error('Invalid response');
+      return data;
+    } catch(e) { 
+      lastErr = e; 
+      console.warn('Fetch variant failed:', proxied, e.message || e); 
+    }
+  }
+  throw lastErr || new Error('All proxies failed');
+}
+
+async function fetchNetworkBBox(bounds) {
+  const south = bounds.getSouth(), west = bounds.getWest();
+  const north = bounds.getNorth(), east = bounds.getEast();
+
+  const margin = 0.01;
+  const bb = [south-margin, west-margin, north+margin, east+margin];
+  
+  for (const b of fetchedBBoxes) {
+    if (bb[0]>=b[0] && bb[1]>=b[1] && bb[2]<=b[2] && bb[3]<=b[3]) return;
+  }
+  fetchedBBoxes.push(bb);
+
+  const q = `
+  [out:json][timeout:45];
+  (
+    way["highway"="cycleway"](${bb[0]},${bb[1]},${bb[2]},${bb[3]});
+    way["cycleway"](${bb[0]},${bb[1]},${bb[2]},${bb[3]});
+    way["highway"="path"]["bicycle"~"^(yes|designated)$"](${bb[0]},${bb[1]},${bb[2]},${bb[3]});
+    way["highway"="footway"]["bicycle"~"^(yes|designated)$"](${bb[0]},${bb[1]},${bb[2]},${bb[3]});
+    way["highway"~"^(residential|living_street|service|unclassified|tertiary|secondary|primary|track)$"](${bb[0]},${bb[1]},${bb[2]},${bb[3]});
+  );
+  (._;>;);
+  out body geom;`;
+
+  let lastErr = null;
+  for (const ep of OVERPASS_ENDPOINTS) {
+    const url = `${ep}?data=${encodeURIComponent(q)}`;
+    try {
+      showStatus(`Loading network… <div class="spinner" style="display: inline-block; margin-left: 8px;"></div>`);
+      const data = await fetchJSONWithFallbacks(url);
+      console.log('Overpass elements:', data?.elements?.length ?? 0, 'from', ep);
+      integrateOverpass(data);
+      updateSpatialIndex();
+      showStatus(`Network loaded. ${graph.nodes.size} nodes available.`);
+      return;
+    } catch(e) { 
+      lastErr = e; 
+      console.warn('Overpass mirror failed', ep, e.message || e); 
+    }
+  }
+  showStatus(`Network fetch failed: ${lastErr?.message || 'Unknown error'}. Try zooming in and using "↻ Fetch Area".`, 5000);
+}
+
+function integrateOverpass(data) {
+  const nodes = graph.nodes;
+  const nodeIdx = new Map();
+  
+  for (const el of data.elements || []) {
+    if (el.type === 'node') nodeIdx.set(el.id, { lat: el.lat, lon: el.lon });
+  }
+
+  const debugSegments = [];
+
+  for (const el of data.elements || []) {
+    if (el.type !== 'way' || !el.tags) continue;
+    const tags = el.tags;
+    const factor = costFactor(tags);
+    if (!isFinite(factor)) continue;
+
+    let pts = [];
+    if (Array.isArray(el.geometry) && el.geometry.length >= 2) {
+      pts = el.geometry.map(g => ({lat: g.lat, lon: g.lon}));
+    } else if (Array.isArray(el.nodes) && el.nodes.length >= 2) {
+      pts = el.nodes.map(id => nodeIdx.get(id)).filter(Boolean);
+      if (pts.length < 2) continue;
+    } else {
+      continue;
+    }
+
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i-1], b = pts[i];
+      const idA = nodeId(a.lat, a.lon), idB = nodeId(b.lat, b.lon);
+
+      if (!nodes.has(idA)) nodes.set(idA, { id: idA, lat: a.lat, lon: a.lon, edges: [] });
+      if (!nodes.has(idB)) nodes.set(idB, { id: idB, lat: b.lat, lon: b.lon, edges: [] });
+
+      const dist = haversine({lat: a.lat, lon: a.lon}, {lat: b.lat, lon: b.lon});
+      const bike = isBikeInfra(tags);
+      const weight = dist * factor;
+
+      // Store tags for segment inspection
+      const edgeA = { to: idB, dist, weight, bike, tags };
+      const edgeB = { to: idA, dist, weight, bike, tags };
+      
+      nodes.get(idA).edges.push(edgeA);
+      nodes.get(idB).edges.push(edgeB);
+
+      debugSegments.push({ a, b, bike, tags });
+    }
+  }
+
+  // Update network overlay if visible
+  if (state.settings.showNetwork) {
+    drawNetworkOverlay(debugSegments);
+  }
+}
+
+function drawNetworkOverlay(segments) {
+  layers.network.clearLayers();
+  segments.forEach(seg => {
+    L.polyline([[seg.a.lat, seg.a.lon], [seg.b.lat, seg.b.lon]], {
+      color: seg.bike ? '#00d4aa' : '#ff6b35',
+      weight: 1,
+      opacity: 0.6
+    }).addTo(layers.network);
+  });
+}
+
+/* ============================================================
+   ROUTING (A*)
+============================================================ */
+
+function astar(startId, goalId) {
+  const open = new Set([startId]);
+  const cameFrom = new Map();
+  const gScore = new Map([[startId, 0]]);
+  const fScore = new Map([[startId, heuristic(startId, goalId)]]);
+
+  function heuristic(aId, bId) {
+    const a = graph.nodes.get(aId), b = graph.nodes.get(bId);
+    if (!a || !b) return Infinity;
+    return haversine({lat: a.lat, lon: a.lon}, {lat: b.lat, lon: b.lon}) * 0.7;
+  }
+
+  while (open.size) {
+    let current = null, lowest = Infinity;
+    for (const id of open) {
+      const f = fScore.get(id) ?? Infinity;
+      if (f < lowest) { lowest = f; current = id; }
+    }
+    if (current === goalId) return reconstructPath(cameFrom, current);
+
+    open.delete(current);
+    const curNode = graph.nodes.get(current);
+    if (!curNode) continue;
+
+    for (const e of curNode.edges) {
+      if (!isFinite(e.weight)) continue;
+      const tentative = (gScore.get(current) ?? Infinity) + e.weight;
+      const gNext = gScore.get(e.to) ?? Infinity;
+      if (tentative < gNext) {
+        cameFrom.set(e.to, { id: current, edge: e });
+        gScore.set(e.to, tentative);
+        fScore.set(e.to, tentative + heuristic(e.to, goalId));
+        open.add(e.to);
+      }
+    }
+  }
+  return null;
+}
+
+function reconstructPath(cameFrom, current) {
+  const nodesSeq = [current];
+  const edgesSeq = [];
+  while (cameFrom.has(current)) {
+    const step = cameFrom.get(current);
+    edgesSeq.push(step.edge);
+    current = step.id;
+    nodesSeq.push(current);
+  }
+  nodesSeq.reverse();
+  edgesSeq.reverse();
+  return { nodesSeq, edgesSeq };
+}
+
+/* ============================================================
+   WAYPOINT MANAGEMENT
+============================================================ */
+
+function addViaPoint(node, skipHistory = false) {
+  const waypoint = { 
+    lat: node.lat, 
+    lon: node.lon, 
+    snappedNodeId: node.id,
+    id: Date.now() + Math.random()
+  };
+  
+  state.viaPoints.push(waypoint);
+  
+  if (!skipHistory) {
+    state.undoStack.push({ type: 'add', waypoint });
+    state.redoStack.length = 0;
+  }
+  
+  drawWaypoint(waypoint);
+  return waypoint;
+}
+
+function drawWaypoint(waypoint) {
+  const marker = L.circleMarker([waypoint.lat, waypoint.lon], {
+    radius: 8,
+    color: '#ffffff',
+    fillColor: '#00d4aa',
+    fillOpacity: 1,
+    weight: 2,
+    className: 'waypoint-marker'
+  }).addTo(layers.waypoints);
+  
+  marker.waypointId = waypoint.id;
+  
+  // Make draggable if enabled
+  if (state.settings.draggableWaypoints) {
+    marker.options.draggable = true;
+    marker.on('dragend', handleWaypointDrag);
+  }
+  
+  marker.bindTooltip(`Waypoint ${state.viaPoints.findIndex(w => w.id === waypoint.id) + 1}`, {
+    offset: [0, -15],
+    direction: 'top',
+    sticky: true
+  });
+  
+  // Right-click to delete
+  marker.on('contextmenu', (e) => {
+    e.originalEvent.preventDefault();
+    removeWaypoint(waypoint.id);
+  });
+}
+
+async function handleWaypointDrag(e) {
+  const marker = e.target;
+  const newLatLng = marker.getLatLng();
+  
+  // Ensure network is available
+  await ensureNetworkForPoint(newLatLng);
+  
+  const nearest = nearestNode(newLatLng);
+  if (!nearest) {
+    showStatus('No network found near this location. Waypoint reverted.');
+    // Revert to original position
+    const waypoint = state.viaPoints.find(w => w.id === marker.waypointId);
+    if (waypoint) {
+      marker.setLatLng([waypoint.lat, waypoint.lon]);
+    }
+    return;
+  }
+  
+  // Update waypoint
+  const waypoint = state.viaPoints.find(w => w.id === marker.waypointId);
+  if (waypoint) {
+    waypoint.lat = nearest.lat;
+    waypoint.lon = nearest.lon;
+    waypoint.snappedNodeId = nearest.id;
+    marker.setLatLng([nearest.lat, nearest.lon]);
+    
+    redrawRoute();
+    showStatus('Waypoint updated');
+  }
+}
+
+function removeWaypoint(waypointId) {
+  const index = state.viaPoints.findIndex(w => w.id === waypointId);
+  if (index === -1) return;
+  
+  state.viaPoints.splice(index, 1);
+  redrawWaypoints();
+  redrawRoute();
+  
+  state.undoStack.push({ type: 'remove', index, waypoint: state.viaPoints[index] });
+  state.redoStack.length = 0;
+}
+
+function redrawWaypoints() {
+  layers.waypoints.clearLayers();
+  state.viaPoints.forEach(drawWaypoint);
+}
+
+function undo() {
+  if (!state.undoStack.length) return;
+  const action = state.undoStack.pop();
+  
+  if (action.type === 'add' && state.viaPoints.length) {
+    const waypoint = state.viaPoints.pop();
+    state.redoStack.push(action);
+    redrawWaypoints();
+    redrawRoute();
+  }
+}
+
+function redo() {
+  if (!state.redoStack.length) return;
+  const action = state.redoStack.pop();
+  
+  if (action.type === 'add') {
+    addViaPoint({ 
+      lat: action.waypoint.lat, 
+      lon: action.waypoint.lon, 
+      id: action.waypoint.snappedNodeId 
+    }, true);
+    redrawRoute();
+  }
+}
+
+function clearRoute() {
+  state.viaPoints.length = 0;
+  state.undoStack.length = 0;
+  state.redoStack.length = 0;
+  layers.route.clearLayers();
+  layers.routeOutline.clearLayers();
+  layers.waypoints.clearLayers();
+  layers.segments.clearLayers();
+  updateStats(0, 0);
+  showStatus('Route cleared');
+}
+
+/* ============================================================
+   ROUTE DRAWING
+============================================================ */
+
+async function redrawRoute() {
+  layers.route.clearLayers();
+  layers.routeOutline.clearLayers();
+  layers.segments.clearLayers();
+
+  if (state.viaPoints.length < 2) {
+    updateStats(0, 0);
+    return;
+  }
+
+  let totalDist = 0;
+  let bikeDist = 0;
+  const segments = [];
+
+  for (let i = 1; i < state.viaPoints.length; i++) {
+    const a = state.viaPoints[i-1], b = state.viaPoints[i];
+    const res = astar(a.snappedNodeId, b.snappedNodeId);
+    
+    if (!res) {
+      showStatus('No path found between some waypoints. Try adjusting positions.', 4000);
+      continue;
+    }
+
+    // Build route segments with metadata
+    let currentSegment = null;
+    for (let j = 0; j < res.edgesSeq.length; j++) {
+      const edge = res.edgesSeq[j];
+      const fromNode = graph.nodes.get(res.nodesSeq[j]);
+      const toNode = graph.nodes.get(res.nodesSeq[j + 1]);
+      
+      if (!currentSegment || edge.bike !== currentSegment.bike) {
+        if (currentSegment) segments.push(currentSegment);
+        currentSegment = { 
+          latlngs: [], 
+          bike: edge.bike, 
+          tags: edge.tags,
+          distance: 0
+        };
+      }
+      
+      if (currentSegment.latlngs.length === 0) {
+        currentSegment.latlngs.push([fromNode.lat, fromNode.lon]);
+      }
+      currentSegment.latlngs.push([toNode.lat, toNode.lon]);
+      currentSegment.distance += edge.dist;
+      
+      totalDist += edge.dist;
+      if (edge.bike) bikeDist += edge.dist;
+    }
+    if (currentSegment) segments.push(currentSegment);
+  }
+
+  // Draw route with animation
+  drawRouteSegments(segments);
+  
+  const pctBike = totalDist ? (bikeDist / totalDist) : 0;
+  updateStats(totalDist, pctBike);
+  
+  // Save current route
+  state.currentRoute = {
+    waypoints: [...state.viaPoints],
+    segments: segments,
+    stats: { totalDist, bikeDist, pctBike }
+  };
+}
+
+function drawRouteSegments(segments) {
+  // Draw outline first
+  segments.forEach(seg => {
+    L.polyline(seg.latlngs, {
+      color: '#000000',
+      weight: 8,
+      opacity: 0.6,
+      lineJoin: 'round',
+      lineCap: 'round'
+    }).addTo(layers.routeOutline);
+  });
+
+  // Draw colored route on top with animation
+  segments.forEach((seg, index) => {
+    const polyline = L.polyline(seg.latlngs, {
+      color: seg.bike ? '#00d4aa' : '#ff6b35',
+      weight: 5,
+      opacity: 1,
+      lineJoin: 'round',
+      lineCap: 'round',
+      className: state.settings.animateRoutes ? 'route-drawing' : ''
+    });
+    
+    // Add click handler for segment inspection
+    polyline.segmentData = seg;
+    polyline.on('click', handleSegmentClick);
+    
+    // Add to map with slight delay for animation effect
+    setTimeout(() => {
+      polyline.addTo(layers.route);
+    }, index * 100);
+  });
+}
+
+/* ============================================================
+   SEGMENT INSPECTION
+============================================================ */
+
+function handleSegmentClick(e) {
+  if (!state.isSegmentInspectMode) return;
+  
+  const segment = e.target.segmentData;
+  if (!segment || !segment.tags) return;
+  
+  showSegmentInfo(e.latlng, segment.tags);
+}
+
+function showSegmentInfo(latlng, tags) {
+  const popup = document.getElementById('segmentInfo');
+  const tagsContainer = document.getElementById('segmentTags');
+  
+  // Clear previous content
+  tagsContainer.innerHTML = '';
+  
+  // Add relevant tags
+  const relevantTags = ['highway', 'cycleway', 'bicycle', 'surface', 'lit', 'lanes', 'access', 'maxspeed', 'name'];
+  
+  relevantTags.forEach(key => {
+    if (tags[key]) {
+      const item = document.createElement('div');
+      item.className = 'tag-item';
+      item.innerHTML = `
+        <span class="tag-key">${key}</span>
+        <span class="tag-value">${tags[key]}</span>
+      `;
+      tagsContainer.appendChild(item);
+    }
+  });
+  
+  // Position popup near click point
+  const point = map.latLngToContainerPoint(latlng);
+  popup.style.left = `${point.x + 10}px`;
+  popup.style.top = `${point.y - 10}px`;
+  popup.classList.add('show');
+  
+  // Hide after delay
+  setTimeout(() => {
+    popup.classList.remove('show');
+  }, 4000);
+}
+
+/* ============================================================
+   ROUTE HISTORY
+============================================================ */
+
+function saveRoute() {
+  if (!state.currentRoute || state.viaPoints.length < 2) return;
+  
+  const route = {
+    id: Date.now(),
+    name: `Route ${new Date().toLocaleDateString()}`,
+    date: new Date().toISOString(),
+    waypoints: [...state.viaPoints],
+    stats: state.currentRoute.stats
+  };
+  
+  state.routeHistory.unshift(route);
+  state.routeHistory = state.routeHistory.slice(0, 20); // Keep last 20
+  
+  localStorage.setItem('routeHistory', JSON.stringify(state.routeHistory));
+  showStatus('Route saved to history');
+}
+
+function loadRoute(routeId) {
+  const route = state.routeHistory.find(r => r.id === routeId);
+  if (!route) return;
+  
+  clearRoute();
+  
+  // Add waypoints
+  route.waypoints.forEach(wp => {
+    const node = { lat: wp.lat, lon: wp.lon, id: wp.snappedNodeId };
+    addViaPoint(node, true);
+  });
+  
+  redrawRoute();
+  closeAllModals();
+  showStatus(`Loaded route: ${route.name}`);
+}
+
+function showRouteHistory() {
+  const historyList = document.getElementById('historyList');
+  
+  if (state.routeHistory.length === 0) {
+    historyList.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px;">No saved routes yet. Create a route to see it here!</p>';
+  } else {
+    historyList.innerHTML = state.routeHistory.map(route => `
+      <div class="history-item" onclick="loadRoute(${route.id})">
+        <div class="history-title">${route.name}</div>
+        <div class="history-meta">
+          <span>${new Date(route.date).toLocaleDateString()}</span>
+          <span>${route.waypoints.length} waypoints</span>
+        </div>
+        <div class="history-stats">
+          <span>${(route.stats.totalDist / 1000).toFixed(1)} km</span>
+          <span>${Math.round(route.stats.pctBike * 100)}% bike infra</span>
+        </div>
+      </div>
+    `).join('');
+  }
+  
+  openModal('historyModal');
+}
+
+/* ============================================================
+   QR CODE SHARING & GPX DOWNLOAD
+============================================================ */
+
+function generateQRCode() {
+  if (!state.currentRoute) return;
+  
+  // For local files, create a compact route data format
+  const routeData = {
+    v: 1, // version
+    w: state.viaPoints.map(wp => [
+      parseFloat(wp.lat.toFixed(6)), 
+      parseFloat(wp.lon.toFixed(6))
+    ]),
+    n: `Route ${new Date().toLocaleDateString()}`,
+    d: Math.round(state.currentRoute.stats.totalDist),
+    b: Math.round(state.currentRoute.stats.pctBike * 100)
+  };
+  
+  // Encode as base64 for QR code
+  const dataStr = JSON.stringify(routeData);
+  const base64Data = btoa(dataStr);
+  
+  // Create a data URL that could be handled by a custom app
+  const qrData = `cycling://route/${base64Data}`;
+  
+  // Generate QR code
+  const qr = qrcode(0, 'M');
+  qr.addData(qrData);
+  qr.make();
+  
+  const qrContainer = document.getElementById('qrCode');
+  qrContainer.innerHTML = qr.createImgTag(4);
+  
+  // Add explanation for local usage
+  const explanation = document.createElement('div');
+  explanation.style.cssText = 'margin-top: 16px; padding: 12px; background: var(--bg-card); border-radius: 8px; font-size: 12px; color: var(--text-muted); text-align: left;';
+  explanation.innerHTML = `
+    <strong>Local File Mode:</strong><br>
+    • QR contains route data (${state.viaPoints.length} waypoints)<br>
+    • Use "Download GPX" button for phone transfer<br>
+    • Or copy the route data below for manual transfer
+  `;
+  qrContainer.appendChild(explanation);
+  
+  // Store data for copying
+  window.currentRouteData = dataStr;
+  
+  openModal('qrModal');
+}
+
+function copyRouteData() {
+  if (window.currentRouteData) {
+    navigator.clipboard.writeText(window.currentRouteData).then(() => {
+      showStatus('Route data copied to clipboard!');
+    }).catch(() => {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = window.currentRouteData;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      showStatus('Route data copied to clipboard!');
+    });
+  }
+}
+
+function downloadGPXForPhone() {
+  if (!state.currentRoute) return;
+  
+  // Generate GPX with better metadata for phone apps
+  const points = [];
+  layers.routeOutline.eachLayer(layer => {
+    if (layer.getLatLngs) {
+      points.push(...layer.getLatLngs());
+    }
+  });
+  
+  if (points.length === 0) return;
+  
+  const now = new Date().toISOString();
+  const routeName = `Dutch Cycling Route ${new Date().toLocaleDateString()}`;
+  const distance = (state.currentRoute.stats.totalDist / 1000).toFixed(1);
+  
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Netherlands Cycling Route Planner" xmlns="http://www.topografix.com/GPX/1/1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.topografix.com/GPX/1/1 http://www.topografix.com/GPX/1/1/gpx.xsd">
+  <metadata>
+    <name>${routeName}</name>
+    <desc>Cycling route in the Netherlands - ${distance}km, ${Math.round(state.currentRoute.stats.pctBike * 100)}% bike infrastructure</desc>
+    <time>${now}</time>
+    <keywords>cycling,netherlands,bike,route</keywords>
+  </metadata>
+  <trk>
+    <name>${routeName}</name>
+    <desc>${distance}km cycling route with ${state.viaPoints.length} waypoints</desc>
+    <type>cycling</type>
+    <trkseg>
+`;
+
+  // Deduplicate points
+  const deduped = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i === 0 || points[i].lat !== points[i-1].lat || points[i].lng !== points[i-1].lng) {
+      deduped.push(points[i]);
+    }
+  }
+  
+  deduped.forEach(p => {
+    gpx += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}"></trkpt>\n`;
+  });
+  
+  gpx += `    </trkseg>
+  </trk>
+  
+  <!-- Waypoints for navigation -->`;
+  
+  state.viaPoints.forEach((wp, i) => {
+    gpx += `
+  <wpt lat="${wp.lat.toFixed(6)}" lon="${wp.lon.toFixed(6)}">
+    <name>Waypoint ${i + 1}</name>
+    <desc>Route waypoint ${i + 1}</desc>
+    <type>waypoint</type>
+  </wpt>`;
+  });
+  
+  gpx += `
+</gpx>`;
+  
+  // Download with mobile-friendly filename
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cycling-route-${new Date().toISOString().split('T')[0]}.gpx`;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showStatus('GPX downloaded! Transfer to your phone for navigation.');
+}
+
+/* ============================================================
+   ENHANCED ROUNDTRIP GENERATION
+============================================================ */
+
+let roundtripGeneration = {
+  isGenerating: false,
+  startPoint: null,
+  targetDistance: 0,
+  generatedRoutes: [],
+  previewLayers: {},
+  currentPreviewIndex: -1,
+  previewLayer: null
+};
+
+function generateRoundtrip() {
+  if (roundtripGeneration.isGenerating) return;
+  
+  const distance = parseFloat(document.getElementById('roundtripDistance').value) * 1000; // Convert to meters
+  const startOption = document.getElementById('roundtripStart').value;
+  const style = document.getElementById('roundtripStyle').value;
+  
+  roundtripGeneration.targetDistance = distance;
+  
+  // Show loading state
+  document.getElementById('roundtripForm').style.display = 'none';
+  document.getElementById('routeSelection').style.display = 'none';
+  document.getElementById('roundtripLoading').style.display = 'block';
+  
+  let startPoint;
+  
+  switch (startOption) {
+    case 'current':
+      startPoint = map.getCenter();
+      doGenerateRoundtrip(startPoint, distance, style);
+      break;
+    case 'location':
+      if (navigator.geolocation) {
+        updateLoadingProgress('Getting your location...');
+        navigator.geolocation.getCurrentPosition(pos => {
+          startPoint = L.latLng(pos.coords.latitude, pos.coords.longitude);
+          doGenerateRoundtrip(startPoint, distance, style);
+        }, () => {
+          showStatus('Geolocation failed, using map center');
+          doGenerateRoundtrip(map.getCenter(), distance, style);
+        });
+        return;
+      } else {
+        showStatus('Geolocation not available, using map center');
+        doGenerateRoundtrip(map.getCenter(), distance, style);
+        return;
+      }
+    case 'click':
+      document.getElementById('roundtripLoading').style.display = 'none';
+      document.getElementById('roundtripForm').style.display = 'block';
+      showStatus('Click on the map to set starting point');
+      closeModal('roundtripModal');
+      // Set up one-time click handler
+      const clickHandler = (e) => {
+        map.off('click', clickHandler);
+        openModal('roundtripModal');
+        document.getElementById('roundtripForm').style.display = 'none';
+        document.getElementById('roundtripLoading').style.display = 'block';
+        doGenerateRoundtrip(e.latlng, distance, style);
+      };
+      map.on('click', clickHandler);
+      return;
+  }
+}
+
+function updateLoadingProgress(message) {
+  document.getElementById('loadingProgress').textContent = message;
+}
+
+async function doGenerateRoundtrip(startLatLng, targetDistance, style) {
+  try {
+    roundtripGeneration.isGenerating = true;
+    roundtripGeneration.startPoint = startLatLng;
+    roundtripGeneration.generatedRoutes = [];
+    
+    updateLoadingProgress('Loading network data...');
+    updateProgressBar(10);
+    
+    await ensureNetworkForPoint(startLatLng);
+    
+    // Expand network coverage for better route options
+    const expandedBounds = boundsAround(startLatLng, Math.max(targetDistance * 0.8, 3000));
+    await fetchNetworkBBox(expandedBounds);
+    
+    updateProgressBar(25);
+    
+    const startNode = nearestNode(startLatLng);
+    if (!startNode) {
+      throw new Error('No cycle network found at starting point. Try a different location or zoom in more.');
+    }
+    
+    updateLoadingProgress('Generating route alternatives...');
+    
+    // Generate 3 different routes with different strategies
+    const strategies = getRouteStrategies(style);
+    
+    for (let i = 0; i < strategies.length; i++) {
+      const progressBase = 25 + (i * 60 / strategies.length);
+      updateLoadingProgress(`Creating route ${i + 1} of ${strategies.length}: ${strategies[i].name}...`);
+      updateProgressBar(progressBase);
+      
+      try {
+        const route = await generateSingleRoundtrip(startNode, targetDistance, strategies[i]);
+        if (route && route.actualDistance > targetDistance * 0.3) { // Minimum viable distance
+          roundtripGeneration.generatedRoutes.push(route);
+          updateProgressBar(progressBase + (60 / strategies.length) * 0.8);
+        } else {
+          console.warn(`Route ${i + 1} generated but too short or invalid`);
+        }
+      } catch (e) {
+        console.warn(`Failed to generate route ${i + 1}:`, e.message);
+        // Continue with other routes
+      }
+    }
+    
+    updateProgressBar(90);
+    
+    if (roundtripGeneration.generatedRoutes.length === 0) {
+      throw new Error('Could not generate any valid roundtrip routes. Try a different starting location or shorter distance.');
+    }
+    
+    updateLoadingProgress('Finalizing routes...');
+    updateProgressBar(100);
+    
+    // Small delay for smooth UX
+    setTimeout(async () => {
+      await displayRouteOptions();
+    }, 500);
+    
+  } catch (error) {
+    console.error('Roundtrip generation failed:', error);
+    showStatus(`Failed to generate roundtrip: ${error.message}`, 6000);
+    resetRoundtripModal();
+  } finally {
+    roundtripGeneration.isGenerating = false;
+  }
+}
+
+function getRouteStrategies(style) {
+  const baseStrategies = [
+    { name: 'Scenic Route', preference: 'bike', exploration: 0.8, description: 'Prioritizes cycling infrastructure and scenic paths' },
+    { name: 'Balanced Route', preference: 'mixed', exploration: 0.6, description: 'Good mix of efficiency and cycling comfort' },
+    { name: 'Direct Route', preference: 'direct', exploration: 0.4, description: 'Most efficient route with minimal detours' }
+  ];
+  
+  switch (style) {
+    case 'scenic':
+      return [
+        { name: 'Park & Path Route', preference: 'bike', exploration: 0.9, description: 'Maximum use of parks and dedicated cycle paths' },
+        { name: 'Waterside Route', preference: 'bike', exploration: 0.8, description: 'Routes along canals and waterways' },
+        { name: 'Green Corridor', preference: 'bike', exploration: 0.7, description: 'Through green areas and quiet neighborhoods' }
+      ];
+    case 'direct':
+      return [
+        { name: 'Express Route', preference: 'direct', exploration: 0.3, description: 'Fastest possible round trip' },
+        { name: 'Efficient Route', preference: 'direct', exploration: 0.4, description: 'Quick with minimal complexity' },
+        { name: 'Time-Saver', preference: 'mixed', exploration: 0.5, description: 'Balance of speed and cycling comfort' }
+      ];
+    case 'explore':
+      return [
+        { name: 'Adventure Route', preference: 'mixed', exploration: 0.9, description: 'Maximum area coverage and exploration' },
+        { name: 'Discovery Route', preference: 'bike', exploration: 0.8, description: 'Explores different neighborhoods safely' },
+        { name: 'Wanderer Route', preference: 'mixed', exploration: 0.7, description: 'Varied terrain and interesting diversions' }
+      ];
+    default:
+      return baseStrategies;
+  }
+}
+
+async function generateSingleRoundtrip(startNode, targetDistance, strategy) {
+  const waypoints = [startNode];
+  let currentNode = startNode;
+  let totalDistance = 0;
+  const visitedNodes = new Set([startNode.id]);
+  
+  // Calculate how many intermediate waypoints we need
+  const segmentTarget = targetDistance * 0.8; // Leave 20% for return to start
+  const numWaypoints = Math.max(3, Math.min(8, Math.floor(targetDistance / 4000))); // 1 waypoint per ~4km
+  
+  // Generate intermediate waypoints with better distance control
+  for (let i = 0; i < numWaypoints && totalDistance < segmentTarget; i++) {
+    const remainingDistance = segmentTarget - totalDistance;
+    const segmentLength = remainingDistance / (numWaypoints - i) * (0.8 + Math.random() * 0.4);
+    
+    // Try multiple candidate points for this segment
+    let bestCandidate = null;
+    let bestDistance = Infinity;
+    
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const angle = (i / numWaypoints) * 2 * Math.PI + 
+                   (Math.random() - 0.5) * strategy.exploration * 0.5 +
+                   attempt * 0.4; // Spread attempts
+      
+      const radius = Math.min(segmentLength * 0.8, targetDistance * 0.4);
+      
+      const targetLat = currentNode.lat + (radius / 111320) * Math.cos(angle);
+      const targetLon = currentNode.lon + (radius / (111320 * Math.cos(currentNode.lat * Math.PI / 180))) * Math.sin(angle);
+      
+      await ensureNetworkForPoint(L.latLng(targetLat, targetLon));
+      const candidateNode = nearestNode(L.latLng(targetLat, targetLon));
+      
+      if (candidateNode && !visitedNodes.has(candidateNode.id)) {
+        // Test actual routing distance
+        const testRoute = astar(currentNode.id, candidateNode.id);
+        if (testRoute) {
+          const actualDistance = calculateRouteDistance(testRoute);
+          const distanceError = Math.abs(actualDistance - segmentLength);
+          
+          if (distanceError < bestDistance && totalDistance + actualDistance < targetDistance * 0.9) {
+            bestDistance = distanceError;
+            bestCandidate = {
+              node: candidateNode,
+              route: testRoute,
+              distance: actualDistance
+            };
+          }
+        }
+      }
+    }
+    
+    // Use best candidate if found
+    if (bestCandidate) {
+      waypoints.push(bestCandidate.node);
+      visitedNodes.add(bestCandidate.node.id);
+      currentNode = bestCandidate.node;
+      totalDistance += bestCandidate.distance;
+    }
+  }
+  
+  // Always ensure we can return to start
+  const returnRoute = astar(currentNode.id, startNode.id);
+  if (!returnRoute) {
+    // If direct return fails, try intermediate point closer to start
+    const backupLat = (currentNode.lat + startNode.lat) / 2;
+    const backupLon = (currentNode.lon + startNode.lon) / 2;
+    
+    await ensureNetworkForPoint(L.latLng(backupLat, backupLon));
+    const backupNode = nearestNode(L.latLng(backupLat, backupLon));
+    
+    if (backupNode && !visitedNodes.has(backupNode.id)) {
+      const toBackup = astar(currentNode.id, backupNode.id);
+      const fromBackup = astar(backupNode.id, startNode.id);
+      
+      if (toBackup && fromBackup) {
+        waypoints.push(backupNode);
+        totalDistance += calculateRouteDistance(toBackup) + calculateRouteDistance(fromBackup);
+      } else {
+        throw new Error('Cannot create complete loop - network limitations');
+      }
+    } else {
+      throw new Error('Cannot create complete loop - no return path');
+    }
+  } else {
+    totalDistance += calculateRouteDistance(returnRoute);
+  }
+  
+  // Complete the loop
+  waypoints.push(startNode);
+  
+  // Build complete route data
+  const routeData = await buildCompleteRoute(waypoints);
+  
+  // Validate route quality
+  const distanceAccuracy = 1 - Math.abs(routeData.distance - targetDistance) / targetDistance;
+  if (distanceAccuracy < 0.5) { // If more than 50% off target
+    console.warn(`Route distance accuracy poor: ${(routeData.distance/1000).toFixed(1)}km vs ${(targetDistance/1000).toFixed(1)}km target`);
+  }
+  
+  return {
+    name: strategy.name,
+    description: strategy.description,
+    waypoints: waypoints,
+    distance: totalDistance,
+    actualDistance: routeData.distance,
+    bikeInfra: routeData.bikeInfra,
+    estimatedTime: Math.round((routeData.distance / 1000) / state.settings.cyclingSpeed * 60),
+    route: routeData,
+    accuracy: distanceAccuracy
+  };
+}
+
+function calculateRouteDistance(routeResult) {
+  return routeResult.edgesSeq.reduce((total, edge) => total + edge.dist, 0);
+}
+
+function updateProgressBar(percent) {
+  const progressFill = document.querySelector('#roundtripLoading .progress-fill');
+  if (progressFill) {
+    progressFill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
+  }
+}
+
+async function buildCompleteRoute(waypoints) {
+  let totalDist = 0;
+  let bikeDist = 0;
+  const segments = [];
+  
+  for (let i = 1; i < waypoints.length; i++) {
+    const a = waypoints[i-1], b = waypoints[i];
+    const res = astar(a.id, b.id);
+    
+    if (!res) {
+      console.warn(`No route found between waypoint ${i-1} and ${i}`);
+      continue;
+    }
+    
+    for (let j = 0; j < res.edgesSeq.length; j++) {
+      const edge = res.edgesSeq[j];
+      const fromNode = graph.nodes.get(res.nodesSeq[j]);
+      const toNode = graph.nodes.get(res.nodesSeq[j + 1]);
+      
+      if (fromNode && toNode) {
+        totalDist += edge.dist;
+        if (edge.bike) bikeDist += edge.dist;
+        
+        segments.push({
+          from: [fromNode.lat, fromNode.lon],
+          to: [toNode.lat, toNode.lon],
+          bike: edge.bike
+        });
+      }
+    }
+  }
+  
+  return {
+    distance: totalDist,
+    bikeInfra: totalDist ? (bikeDist / totalDist) : 0,
+    segments: segments
+  };
+}
+
+async function displayRouteOptions() {
+  document.getElementById('roundtripLoading').style.display = 'none';
+  document.getElementById('routeSelection').style.display = 'block';
+  
+  // Actually open the alternatives panel
+  setTimeout(() => {
+    closeModal('roundtripModal');
+    showAlternativesPanel();
+  }, 500);
+  
+  const container = document.getElementById('alternativesList');
+  if (!container) {
+    console.error('alternativesList element not found!');
+    return;
+  }
+  container.innerHTML = '';
+  
+  // Sort routes by quality score
+  roundtripGeneration.generatedRoutes.sort((a, b) => {
+    const scoreA = a.bikeInfra * 0.7 + (1 - Math.abs(a.actualDistance - roundtripGeneration.targetDistance) / roundtripGeneration.targetDistance) * 0.3;
+    const scoreB = b.bikeInfra * 0.7 + (1 - Math.abs(b.actualDistance - roundtripGeneration.targetDistance) / roundtripGeneration.targetDistance) * 0.3;
+    return scoreB - scoreA;
+  });
+  
+  roundtripGeneration.generatedRoutes.forEach((route, index) => {
+    const option = document.createElement('div');
+    option.className = 'route-option';
+    option.style.cursor = 'pointer';
+    option.innerHTML = `
+      <div class="route-header">
+        <h5 class="route-title">${route.name}</h5>
+        <span class="route-badge">${index === 0 ? 'Recommended' : `Option ${index + 1}`}</span>
+      </div>
+      <p style="font-size: 12px; color: var(--text-muted); margin: 4px 0 8px 0;">${route.description}</p>
+      <div class="route-stats">
+        <div class="route-stat">
+          <span class="route-stat-value">${(route.actualDistance / 1000).toFixed(1)} km</span>
+          <div class="route-stat-label">Distance</div>
+        </div>
+        <div class="route-stat">
+          <span class="route-stat-value">${Math.round(route.bikeInfra * 100)}%</span>
+          <div class="route-stat-label">Bike Infra</div>
+        </div>
+        <div class="route-stat">
+          <span class="route-stat-value">${route.estimatedTime}m</span>
+          <div class="route-stat-label">Est. Time</div>
+        </div>
+      </div>
+      <div class="button-group" style="margin-top: 12px;">
+        <button class="btn" onclick="event.stopPropagation(); previewRoundtripRoute(${index})" style="background: var(--bg-hover);">👁️ Preview</button>
+        <button class="btn primary" onclick="event.stopPropagation(); applyRoundtripRoute(${index})">✓ Use This Route</button>
+      </div>
+    `;
+    
+    // Add click handler to the whole card for preview
+    option.onclick = () => previewRoundtripRoute(index);
+    
+    container.appendChild(option);
+  });
+  
+  // Add instruction text at the top
+  const instructions = document.createElement('div');
+  instructions.style.cssText = 'padding: 12px; background: var(--bg-card); border-radius: 8px; margin-bottom: 16px; font-size: 13px; color: var(--text-secondary);';
+  instructions.innerHTML = '💡 Click any route to preview it on the map. Press "Use This Route" when you\'ve found the one you want.';
+  container.insertBefore(instructions, container.firstChild);
+  
+  // Auto-preview the first (recommended) route
+  if (roundtripGeneration.generatedRoutes.length > 0) {
+    setTimeout(() => previewRoundtripRoute(0), 600);
+  }
+}
+
+function createRoutePreview(route, index) {
+  // This function is kept for compatibility but simplified
+  // We don't need preview layers since we apply routes directly
+}
+
+function resetRoundtripModal() {
+  document.getElementById('roundtripForm').style.display = 'block';
+  document.getElementById('roundtripLoading').style.display = 'none';
+  document.getElementById('routeSelection').style.display = 'none';
+  
+  // Reset progress bar
+  updateProgressBar(0);
+  
+  // Clear preview
+  clearRoutePreview();
+  
+  // Don't clear generated routes if alternatives panel is open
+  const alternativesPanel = document.getElementById('routeAlternativesPanel');
+  if (!alternativesPanel || !alternativesPanel.classList.contains('open')) {
+    roundtripGeneration.generatedRoutes = [];
+    roundtripGeneration.currentPreviewIndex = -1;
+  }
+}
+
+/* ============================================================
+   MAP LAYER MANAGEMENT
+============================================================ */
+
+function switchMapLayer(layerKey) {
+  // Remove current base layer
+  if (currentBaseLayer) {
+    map.removeLayer(currentBaseLayer);
+  }
+  
+  // Add new layer
+  if (mapLayers[layerKey]) {
+    currentBaseLayer = mapLayers[layerKey];
+    currentBaseLayer.addTo(map);
+  }
+}
+
+/* ============================================================
+   NETWORK UTILITIES
+============================================================ */
+
+async function ensureNetworkForPoint(latlng) {
+  if (!state.settings.autoFetch) return;
+  const bounds = boundsAround(latlng, 2500);
+  await fetchNetworkBBox(bounds);
+}
+
+function toggleNetworkOverlay() {
+  state.settings.showNetwork = !state.settings.showNetwork;
+  document.getElementById('showNetwork').checked = state.settings.showNetwork;
+  
+  if (state.settings.showNetwork) {
+    // Redraw network if we have data
+    const segments = [];
+    for (const node of graph.nodes.values()) {
+      for (const edge of node.edges) {
+        const targetNode = graph.nodes.get(edge.to);
+        if (targetNode) {
+          segments.push({
+            a: { lat: node.lat, lon: node.lon },
+            b: { lat: targetNode.lat, lon: targetNode.lon },
+            bike: edge.bike,
+            tags: edge.tags
+          });
+        }
+      }
+    }
+    drawNetworkOverlay(segments);
+    showStatus('Network overlay enabled');
+  } else {
+    layers.network.clearLayers();
+    showStatus('Network overlay disabled');
+  }
+}
+
+/* ============================================================
+   URL ROUTE LOADING
+============================================================ */
+
+function loadRouteFromUrl() {
+  const hash = window.location.hash;
+  if (hash.startsWith('#route=')) {
+    const routeData = decodeURIComponent(hash.substring(7));
+    const waypoints = routeData.split('|').map(wp => {
+      const [lat, lon] = wp.split(',').map(Number);
+      return { lat, lon };
+    });
+    
+    if (waypoints.length >= 2) {
+      clearRoute();
+      waypoints.forEach(async wp => {
+        await ensureNetworkForPoint(L.latLng(wp.lat, wp.lon));
+        const node = nearestNode(L.latLng(wp.lat, wp.lon));
+        if (node) addViaPoint(node, true);
+      });
+      
+      // Zoom to route
+      const bounds = L.latLngBounds(waypoints.map(wp => [wp.lat, wp.lon]));
+      map.fitBounds(bounds, { padding: [50, 50] });
+      
+      setTimeout(() => redrawRoute(), 1000);
+      showStatus('Route loaded from URL');
+    }
+  }
+}
+
+/* ============================================================
+   EVENT HANDLERS
+============================================================ */
+
+// Map click handler
+map.on('click', async (e) => {
+  if (state.isSegmentInspectMode) return;
+  
+  await ensureNetworkForPoint(e.latlng);
+  const node = nearestNode(e.latlng);
+  
+  if (!node) {
+    showStatus(`No cycle network within ${Math.min(state.settings.snapRadius, 50)}m. Try a different location or zoom in more.`);
+    clearSnapPreview();
+    return;
+  }
+  
+  // Clear preview and add waypoint
+  clearSnapPreview();
+  addViaPoint(node);
+  redrawRoute();
+  
+  // Show snap feedback
+  const clickDist = haversine(ll(e.latlng), {lat: node.lat, lon: node.lon});
+  if (clickDist > 5) {
+    showStatus(`Waypoint snapped to network (${Math.round(clickDist)}m away)`);
+  }
+  
+  // Auto-save after 2+ waypoints
+  if (state.viaPoints.length >= 2) {
+    setTimeout(() => saveRoute(), 1000);
+  }
+});
+
+// Mouse move handler for snap preview
+map.on('mousemove', (e) => {
+  if (state.isSegmentInspectMode || state.viaPoints.length > 10) return; // Skip for performance with many waypoints
+  
+  // Throttle preview updates
+  clearTimeout(map._previewTimeout);
+  map._previewTimeout = setTimeout(() => {
+    if (state.spatialNodes.length > 0) {
+      showSnapPreview(e.latlng);
+    }
+  }, 100);
+});
+
+// Clear preview when mouse leaves map
+map.on('mouseout', clearSnapPreview);
+
+// Auto-fetch on map move
+map.on('moveend', () => {
+  if (state.settings.autoFetch && map.getZoom() >= 13) {
+    const center = map.getCenter();
+    fetchNetworkBBox(boundsAround(center, 3000));
+  }
+});
+
+// Button event handlers
+document.getElementById('themeToggle').onclick = toggleTheme;
+document.getElementById('settingsBtn').onclick = () => {
+  const settingsPanel = document.getElementById('settingsPanel');
+  const alternativesPanel = document.getElementById('routeAlternativesPanel');
+  
+  // Close alternatives panel if open
+  alternativesPanel.classList.remove('open');
+  
+  // Toggle settings panel
+  settingsPanel.classList.toggle('open');
+};
+
+document.getElementById('closeSettings').onclick = () => {
+  document.getElementById('settingsPanel').classList.remove('open');
+};
+
+document.getElementById('undoBtn').onclick = undo;
+document.getElementById('redoBtn').onclick = redo;
+document.getElementById('clearBtn').onclick = clearRoute;
+
+document.getElementById('locateBtn').onclick = () => {
+  if (!navigator.geolocation) {
+    showStatus('Geolocation not available');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(async (pos) => {
+    const latlng = L.latLng(pos.coords.latitude, pos.coords.longitude);
+    map.setView(latlng, 14);
+    await ensureNetworkForPoint(latlng);
+    showStatus('Centered on your location');
+  }, (err) => showStatus('Geolocation failed: ' + err.message));
+};
+
+document.getElementById('exportBtn').onclick = () => {
+  if (!state.currentRoute) return;
+  
+  // Collect route points
+  const points = [];
+  layers.routeOutline.eachLayer(layer => {
+    if (layer.getLatLngs) {
+      points.push(...layer.getLatLngs());
+    }
+  });
+  
+  if (points.length === 0) return;
+  
+  // Generate GPX
+  const now = new Date().toISOString();
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Enhanced Cycling Route Planner" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata>
+    <time>${now}</time>
+    <name>Cycling Route</name>
+  </metadata>
+  <trk>
+    <name>Cycling Route ${new Date().toLocaleDateString()}</name>
+    <trkseg>
+`;
+  
+  const deduped = [];
+  for (let i = 0; i < points.length; i++) {
+    if (i === 0 || points[i].lat !== points[i-1].lat || points[i].lng !== points[i-1].lng) {
+      deduped.push(points[i]);
+    }
+  }
+  
+  deduped.forEach(p => {
+    gpx += `      <trkpt lat="${p.lat.toFixed(6)}" lon="${p.lng.toFixed(6)}"></trkpt>\n`;
+  });
+  
+  gpx += `    </trkseg>
+  </trk>
+</gpx>`;
+  
+  // Download
+  const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cycling-route-${new Date().toISOString().split('T')[0]}.gpx`;
+  a.click();
+  URL.revokeObjectURL(url);
+  
+  showStatus('GPX exported successfully');
+};
+
+// GPX Import
+document.getElementById('gpxFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  
+  try {
+    const text = await file.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'application/xml');
+    
+    const trkpts = [...doc.querySelectorAll('trkpt')];
+    if (trkpts.length < 2) throw new Error('No track points found');
+    
+    const points = trkpts.map(pt => ({
+      lat: parseFloat(pt.getAttribute('lat')),
+      lon: parseFloat(pt.getAttribute('lon'))
+    }));
+    
+    clearRoute();
+    
+    // Sample points for waypoints (roughly every 1-2km)
+    const sampledPoints = [points[0]];
+    let accumulatedDistance = 0;
+    
+    for (let i = 1; i < points.length; i++) {
+      const dist = haversine(sampledPoints[sampledPoints.length - 1], points[i]);
+      accumulatedDistance += dist;
+      
+      if (accumulatedDistance > 1500) { // ~1.5km intervals
+        sampledPoints.push(points[i]);
+        accumulatedDistance = 0;
+      }
+    }
+    
+    if (sampledPoints[sampledPoints.length - 1] !== points[points.length - 1]) {
+      sampledPoints.push(points[points.length - 1]);
+    }
+    
+    // Add waypoints
+    for (const point of sampledPoints) {
+      await ensureNetworkForPoint(L.latLng(point.lat, point.lon));
+      const node = nearestNode(L.latLng(point.lat, point.lon));
+      if (node) addViaPoint(node, true);
+    }
+    
+    redrawRoute();
+    saveRoute();
+    
+    // Fit bounds
+    const bounds = L.latLngBounds(points.map(p => [p.lat, p.lon]));
+    map.fitBounds(bounds, { padding: [20, 20] });
+    
+    showStatus(`GPX imported: ${points.length} points → ${state.viaPoints.length} waypoints`);
+    
+  } catch (error) {
+    showStatus('Failed to import GPX: ' + error.message);
+  } finally {
+    e.target.value = '';
+  }
+});
+
+// Other button handlers
+document.getElementById('roundtripBtn').onclick = () => openModal('roundtripModal');
+document.getElementById('historyBtn').onclick = showRouteHistory;
+document.getElementById('qrBtn').onclick = generateQRCode;
+document.getElementById('shareBtn').onclick = () => {
+  if (state.currentRoute) {
+    const waypoints = state.viaPoints.map(wp => `${wp.lat},${wp.lon}`).join('|');
+    const url = `${window.location.origin}${window.location.pathname}#route=${encodeURIComponent(waypoints)}`;
+    navigator.clipboard.writeText(url).then(() => {
+      showStatus('Route URL copied to clipboard!');
+    });
+  }
+};
+
+document.getElementById('toggleNetworkBtn').onclick = toggleNetworkOverlay;
+document.getElementById('fetchHereBtn').onclick = () => {
+  if (map.getZoom() < 13) {
+    showStatus('Zoom in to at least level 13 first');
+    return;
+  }
+  const center = map.getCenter();
+  fetchNetworkBBox(boundsAround(center, 3000));
+};
+
+document.getElementById('segmentModeBtn').onclick = () => {
+  state.isSegmentInspectMode = !state.isSegmentInspectMode;
+  const btn = document.getElementById('segmentModeBtn');
+  if (state.isSegmentInspectMode) {
+    btn.style.background = 'var(--accent)';
+    btn.style.color = 'white';
+    showStatus('Segment inspection mode enabled. Click on route segments to see details.');
+  } else {
+    btn.style.background = '';
+    btn.style.color = '';
+    showStatus('Segment inspection mode disabled.');
+  }
+};
+
+// Map controls
+document.getElementById('mapLayerSelect').onchange = (e) => {
+  switchMapLayer(e.target.value);
+  document.getElementById('baseMap').value = e.target.value;
+};
+
+document.getElementById('zoomToRouteBtn').onclick = () => {
+  if (state.viaPoints.length > 0) {
+    const bounds = L.latLngBounds(state.viaPoints.map(wp => [wp.lat, wp.lon]));
+    map.fitBounds(bounds, { padding: [50, 50] });
+  }
+};
+
+document.getElementById('fullscreenBtn').onclick = () => {
+  if (document.fullscreenElement) {
+    document.exitFullscreen();
+  } else {
+    document.documentElement.requestFullscreen();
+  }
+};
+
+// Settings handlers
+document.getElementById('snapRadius').oninput = (e) => {
+  state.settings.snapRadius = parseInt(e.target.value);
+  document.getElementById('snapValue').textContent = e.target.value;
+};
+
+document.getElementById('cyclingSpeed').onchange = (e) => {
+  state.settings.cyclingSpeed = parseFloat(e.target.value);
+  if (state.currentRoute) {
+    updateStats(state.currentRoute.stats.totalDist, state.currentRoute.stats.pctBike);
+  }
+};
+
+document.getElementById('autoFetch').onchange = (e) => {
+  state.settings.autoFetch = e.target.checked;
+};
+
+document.getElementById('baseMap').onchange = (e) => {
+  switchMapLayer(e.target.value);
+  document.getElementById('mapLayerSelect').value = e.target.value;
+};
+
+document.getElementById('showNetwork').onchange = (e) => {
+  state.settings.showNetwork = e.target.checked;
+  toggleNetworkOverlay();
+};
+
+document.getElementById('animateRoutes').onchange = (e) => {
+  state.settings.animateRoutes = e.target.checked;
+};
+
+document.getElementById('draggableWaypoints').onchange = (e) => {
+  state.settings.draggableWaypoints = e.target.checked;
+  redrawWaypoints(); // Refresh waypoints with new draggable state
+};
+
+// Modal handlers
+document.querySelectorAll('.modal-close, [data-modal]').forEach(el => {
+  el.onclick = (e) => {
+    const modalId = el.getAttribute('data-modal') || 
+                   el.closest('.modal-overlay').id;
+    if (modalId === 'roundtripModal') {
+      resetRoundtripModal();
+    }
+    closeModal(modalId);
+  };
+});
+
+// Click outside modal to close
+document.querySelectorAll('.modal-overlay').forEach(modal => {
+  modal.onclick = (e) => {
+    if (e.target === modal) {
+      if (modal.id === 'roundtripModal') {
+        resetRoundtripModal();
+      }
+      closeModal(modal.id);
+    }
+  };
+});
+
+// QR modal handlers
+document.getElementById('downloadGpxPhoneBtn').onclick = downloadGPXForPhone;
+document.getElementById('copyDataBtn').onclick = copyRouteData;
+
+// Roundtrip handlers
+document.getElementById('generateRoundtripBtn').onclick = generateRoundtrip;
+
+// Route alternatives panel handlers
+document.getElementById('closeAlternatives').onclick = () => {
+  clearRoutePreview();
+  roundtripGeneration.currentPreviewIndex = -1;
+  hideAlternativesPanel();
+};
+
+document.getElementById('regenerateRoutesBtn').onclick = () => {
+  clearRoutePreview();
+  roundtripGeneration.currentPreviewIndex = -1;
+  hideAlternativesPanel();
+  openModal('roundtripModal');
+  setTimeout(() => {
+    generateRoundtrip();
+  }, 100);
+};
+
+document.getElementById('clearAlternativesBtn').onclick = () => {
+  clearRoutePreview();
+  roundtripGeneration.generatedRoutes = [];
+  roundtripGeneration.currentPreviewIndex = -1;
+  const altList = document.getElementById('alternativesList');
+  if (altList) {
+    altList.innerHTML = '<p style="text-align: center; color: var(--text-muted); padding: 40px;">No alternatives generated yet.</p>';
+  }
+  hideAlternativesPanel();
+  showStatus('Alternative routes cleared');
+};
+
+// History management
+document.getElementById('clearHistoryBtn').onclick = () => {
+  state.routeHistory.length = 0;
+  localStorage.removeItem('routeHistory');
+  showStatus('Route history cleared');
+};
+
+// Expose functions to global scope for HTML onclick handlers
+window.loadRoute = loadRoute;
+window.applyRoundtripRoute = applyRoundtripRoute;
+window.previewRoundtripRoute = previewRoundtripRoute;
+
+/* ============================================================
+   INITIALIZATION
+============================================================ */
+
+function initializeApp() {
+  console.log('Initializing app...');
+  
+  // Check all required elements exist
+  const requiredElements = [
+    'map', 'mainPanel', 'settingsPanel', 'routeAlternativesPanel', 
+    'alternativesList', 'themeToggle', 'settingsBtn'
+  ];
+  
+  for (const id of requiredElements) {
+    const element = document.getElementById(id);
+    console.log(`Element ${id}:`, element ? 'found' : 'NOT FOUND');
+    if (!element && id === 'alternativesList') {
+      console.error(`Critical element missing: ${id}`);
+      console.log('Full DOM at time of check:', document.body.innerHTML);
+    }
+  }
+  
+  // Ensure map container exists
+  const mapContainer = document.getElementById('map');
+  if (!mapContainer) {
+    console.error('Map container not found!');
+    return;
+  }
+  
+  console.log('Map container found, size:', mapContainer.offsetWidth, 'x', mapContainer.offsetHeight);
+  
+  // Force map resize in case of layout issues
+  setTimeout(() => {
+    map.invalidateSize();
+    console.log('Map invalidated and resized');
+  }, 100);
+  
+  // Set theme
+  document.body.setAttribute('data-theme', state.theme);
+  document.getElementById('themeToggle').textContent = state.theme === 'dark' ? '☀️' : '🌙';
+  
+  // Load settings
+  Object.keys(state.settings).forEach(key => {
+    const element = document.getElementById(key);
+    if (element) {
+      if (element.type === 'checkbox') {
+        element.checked = state.settings[key];
+      } else {
+        element.value = state.settings[key];
+      }
+    }
+  });
+  
+  // Update snap value display
+  document.getElementById('snapValue').textContent = state.settings.snapRadius;
+  
+  // Load route from URL if present
+  setTimeout(() => loadRouteFromUrl(), 1000);
+  
+  // Initial status
+  showStatus('🚴 Ready to plan your cycling route! Click on the map to add waypoints.');
+  
+  // Check for file:// protocol
+  if (location.protocol === 'file:') {
+    showStatus('⚠️ Running from file://. Some features may not work. Use a local server instead.', 10000);
+  }
+  
+  console.log('App initialized successfully');
+}
+
+// Start the app when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initializeApp);
+} else {
+  initializeApp();
+}
+
+</script>
+</body>
+</html>
