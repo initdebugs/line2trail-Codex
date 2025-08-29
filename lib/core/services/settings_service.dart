@@ -2,7 +2,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/activity_types.dart';
 
 class SettingsService {
-  static const String _languageKey = 'app_language';
   static const String _waypointsVisibleKey = 'waypoints_visible_default';
   static const String _unitsKey = 'units_system';
   static const String _defaultActivityKey = 'default_activity';
@@ -19,14 +18,7 @@ class SettingsService {
     _prefs = await SharedPreferences.getInstance();
   }
 
-  // Language settings
-  static String getLanguage() {
-    return _prefs?.getString(_languageKey) ?? 'Nederlands';
-  }
-
-  static Future<void> setLanguage(String language) async {
-    await _prefs?.setString(_languageKey, language);
-  }
+  // Language settings removed (Dutch-only app)
 
   // Waypoints visibility settings
   static bool getWaypointsVisible() {

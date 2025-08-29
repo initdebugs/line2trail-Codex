@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/activity_types.dart';
 import '../../../core/services/settings_service.dart';
 import '../../../core/services/localization_service.dart';
-import '../../../core/services/language_notifier.dart';
 
 class NewSettingsScreen extends StatefulWidget {
   const NewSettingsScreen({super.key});
@@ -16,7 +14,6 @@ class NewSettingsScreen extends StatefulWidget {
 class _NewSettingsScreenState extends State<NewSettingsScreen> {
   bool _waypointsVisible = true;
   ActivityType _defaultMode = ActivityType.walking;
-  String _language = 'Nederlands';
   String _unitsSystem = 'Metric';
   bool _showCompass = true;
   bool _routeNotifications = true;
@@ -36,7 +33,6 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
     setState(() {
       _waypointsVisible = SettingsService.getWaypointsVisible();
       _defaultMode = SettingsService.getDefaultActivity();
-      _language = SettingsService.getLanguage();
       _unitsSystem = SettingsService.getUnitsSystem();
       _runningSpeedUnit = SettingsService.getRunningSpeedUnit();
       _isLoading = false;
@@ -160,22 +156,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                   
                   const SizedBox(height: 16),
                   
-                  // App Settings
-                  _buildModernSection(
-                    title: 'App Instellingen',
-                    icon: Icons.phone_android,
-                    color: AppColors.summitOrange,
-                    children: [
-                      _buildModernDropdownTile(
-                        title: 'Taal',
-                        subtitle: _language,
-                        icon: Icons.language,
-                        onTap: () => _showLanguageSelector(),
-                      ),
-                    ],
-                  ),
                   
-                  const SizedBox(height: 16),
                   
                   // Map Settings
                   _buildModernSection(
@@ -633,38 +614,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
     );
   }
 
-  void _showLanguageSelector() {
-    final languages = ['Nederlands', 'English'];
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              'Kies Taal',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ...languages.map((lang) => ListTile(
-              leading: const Icon(Icons.language, color: AppColors.trailGreen),
-              title: Text(lang),
-              trailing: _language == lang ? const Icon(Icons.check, color: AppColors.trailGreen) : null,
-              onTap: () async {
-                final languageNotifier = Provider.of<LanguageNotifier>(context, listen: false);
-                await languageNotifier.setLanguage(lang);
-                setState(() => _language = lang);
-                Navigator.pop(context);
-              },
-            )),
-          ],
-        ),
-      ),
-    );
-  }
+  // Language selector removed (Dutch-only)
 
   void _showUnitsSelector() {
     final units = ['Metric', 'Imperial'];

@@ -17,6 +17,7 @@ import '../widgets/route_bar.dart';
 import '../widgets/route_tools.dart';
 import '../widgets/map_control_rail.dart';
 import '../widgets/draw_stats_panel.dart';
+import '../widgets/km_marker.dart';
 import '../models/route_drawing_state.dart';
 import '../services/route_editing_service.dart';
 
@@ -249,39 +250,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                       final markerPoint = entry.value;
                       final unitsSystem = SettingsService.getUnitsSystem();
                       final isMetric = unitsSystem == 'Metric';
-                      final markerText = '${index + 1}${isMetric ? 'k' : 'm'}';
-                      
+                      final label = '${index + 1}${isMetric ? 'k' : 'm'}';
                       return Marker(
                         point: markerPoint,
                         width: 28,
                         height: 28,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.summitOrange.withValues(alpha: 0.9),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white,
-                              width: 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.3),
-                                blurRadius: 4,
-                                spreadRadius: 1,
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              markerText,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
+                        child: KmMarker(label: label),
                       );
                     }),
                   ],
@@ -407,7 +381,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _previewMarker = null; // Clear preview marker
           _routingError = '';
           // Calculate distance markers for the initial route
-          _calculateDistanceMarkers();
+          _distanceMarkers = _generateDistanceMarkers();
         });
 
         // Add to history
@@ -425,7 +399,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _userTapPoints.add(point);
           _routingError = '';
           // Calculate distance markers for current route (even before snapping)
-          _calculateDistanceMarkers();
+          _distanceMarkers = _generateDistanceMarkers();
         });
 
         // Add to history
@@ -486,7 +460,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _snapCache[_currentRoute.length] = List<LatLng>.of(snappedPoints);
           _isSnapping = false;
           // Calculate distance markers for the new route
-          _calculateDistanceMarkers();
+          _distanceMarkers = _generateDistanceMarkers();
         });
       }
     } catch (e) {
@@ -516,13 +490,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       }
       _snappedRoute.clear(); // Clear snapped route when undoing
       _routingError = '';
+      _distanceMarkers = _generateDistanceMarkers();
     });
     
     // Use cache if available; otherwise re-snap
     if (_currentRoute.length >= 2) {
       final cached = _snapCache[_currentRoute.length];
       if (cached != null) {
-        setState(() => _snappedRoute = List<LatLng>.of(cached));
+        setState(() {
+          _snappedRoute = List<LatLng>.of(cached);
+          _distanceMarkers = _generateDistanceMarkers();
+        });
       } else {
         _snapCurrentRoute();
       }
@@ -536,13 +514,17 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _currentRoute.addAll(newRoute);
       _snappedRoute.clear(); // Clear snapped route when redoing
       _routingError = '';
+      _distanceMarkers = _generateDistanceMarkers();
     });
     
     // Use cache if available; otherwise re-snap
     if (_currentRoute.length >= 2) {
       final cached = _snapCache[_currentRoute.length];
       if (cached != null) {
-        setState(() => _snappedRoute = List<LatLng>.of(cached));
+        setState(() {
+          _snappedRoute = List<LatLng>.of(cached);
+          _distanceMarkers = _generateDistanceMarkers();
+        });
       } else {
         _snapCurrentRoute();
       }
@@ -554,6 +536,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       // Show original drawn route
       setState(() {
         _snappedRoute.clear();
+        _distanceMarkers = _generateDistanceMarkers();
       });
     } else if (_currentRoute.length >= 2) {
       // Snap to path
@@ -586,10 +569,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     final startPoint = _currentRoute.first;
     final endPoint = _currentRoute.last;
 
-    // Check if start and end are already very close (already a loop)
-    final distance = const Distance().as(LengthUnit.Kilometer, startPoint, endPoint);
-    if (distance < 0.01) {
-      // Points are less than 10 meters apart, consider it already a loop
+    // Determine if route is already a loop (use snapped if available)
+    final rawMeters = const Distance().as(LengthUnit.Meter, startPoint, endPoint);
+    double? snappedMeters;
+    if (_snappedRoute.isNotEmpty) {
+      snappedMeters = const Distance().as(
+        LengthUnit.Meter,
+        _snappedRoute.first,
+        _snappedRoute.last,
+      );
+    }
+
+    final isAlreadyLoop = rawMeters < 30 && (snappedMeters == null || snappedMeters < 30);
+    if (isAlreadyLoop) {
+      // Points are within ~30 meters; consider it already a loop
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Route is al een lus!'),
@@ -650,23 +643,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _calculateDistanceMarkers() {
-    _distanceMarkers.clear();
-    
+  List<LatLng> _generateDistanceMarkers() {
+    final List<LatLng> markers = [];
+
     // Get the route to analyze (prefer snapped route if available)
     final route = _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute;
     debugPrint('🔍 Calculating distance markers for route with ${route.length} points');
-    
     if (route.length < 2) {
       debugPrint('⚠️ Route too short for distance markers');
-      return;
+      return markers;
     }
 
-    // Get units system from settings
     final unitsSystem = SettingsService.getUnitsSystem();
     final isMetric = unitsSystem == 'Metric';
     final markerInterval = isMetric ? 1.0 : 1.60934; // 1 km or 1 mile in km
-    
     debugPrint('📏 Using ${isMetric ? 'metric' : 'imperial'} units, marker interval: ${markerInterval}km');
 
     double cumulativeDistance = 0.0;
@@ -675,31 +665,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     for (int i = 0; i < route.length - 1; i++) {
       final currentPoint = route[i];
       final nextPoint = route[i + 1];
-      
+
       final segmentDistance = const Distance().as(LengthUnit.Kilometer, currentPoint, nextPoint);
+      if (segmentDistance <= 0) continue; // avoid division by zero
+
       final segmentStart = cumulativeDistance;
       final segmentEnd = cumulativeDistance + segmentDistance;
 
-      // Check if any markers fall within this segment
       while (nextMarkerDistance >= segmentStart && nextMarkerDistance <= segmentEnd) {
-        // Calculate the position along the segment where the marker should be
         final ratio = (nextMarkerDistance - segmentStart) / segmentDistance;
-        
-        // Interpolate between current and next point
         final markerLat = currentPoint.latitude + (nextPoint.latitude - currentPoint.latitude) * ratio;
         final markerLng = currentPoint.longitude + (nextPoint.longitude - currentPoint.longitude) * ratio;
-        
-        _distanceMarkers.add(LatLng(markerLat, markerLng));
-        debugPrint('🎯 Added distance marker ${_distanceMarkers.length} at ${markerLat.toStringAsFixed(6)}, ${markerLng.toStringAsFixed(6)}');
-        
-        // Move to next marker distance
+        markers.add(LatLng(markerLat, markerLng));
         nextMarkerDistance += markerInterval;
       }
 
       cumulativeDistance = segmentEnd;
     }
 
-    debugPrint('📏 Generated ${_distanceMarkers.length} distance markers total');
+    debugPrint('📏 Generated ${markers.length} distance markers total');
+    return markers;
   }
 
   void _saveRoute() async {
@@ -1583,6 +1568,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     if (savedRoute.points.isNotEmpty) {
       final bounds = LatLngBounds.fromPoints(savedRoute.points);
       _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+    }
+
+    // Recalculate markers and snap the route for consistency
+    setState(() {
+      _distanceMarkers = _generateDistanceMarkers();
+    });
+    if (_currentRoute.length >= 2) {
+      _snapCurrentRoute();
     }
   }
 

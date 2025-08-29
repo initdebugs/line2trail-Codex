@@ -13,7 +13,6 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _waypointsVisible = true;
   ActivityType _defaultMode = ActivityType.walking;
-  String _language = 'Nederlands';
   String _unitsSystem = 'Metric';
   bool _isLoading = true;
 
@@ -28,7 +27,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     setState(() {
       _waypointsVisible = SettingsService.getWaypointsVisible();
       _defaultMode = SettingsService.getDefaultActivity();
-      _language = SettingsService.getLanguage();
       _unitsSystem = SettingsService.getUnitsSystem();
       _isLoading = false;
     });
@@ -99,23 +97,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           _buildSectionHeader('App Instellingen'),
           const SizedBox(height: 8),
           _buildCard([
-            _buildDropdownTile<String>(
+            _buildListTile(
               title: 'Taal',
-              subtitle: 'Kies de taal voor de app interface',
-              value: _language,
+              subtitle: 'Nederlands (vast)',
               icon: Icons.language,
-              items: ['Nederlands', 'English']
-                  .map((lang) => DropdownMenuItem<String>(
-                        value: lang,
-                        child: Text(lang),
-                      ))
-                  .toList(),
-              onChanged: (String? value) async {
-                if (value != null) {
-                  await SettingsService.setLanguage(value);
-                  setState(() => _language = value);
-                }
-              },
+              onTap: () {},
             ),
           ]),
 

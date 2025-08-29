@@ -1,46 +1,40 @@
 # Repository Guidelines
 
-## Project Structure & Module Organization
-- Source: `lib/` organized by features and layers
-  - `lib/features/` (e.g., `map/`, `navigation/`, `routes/`): screens, widgets, models, services per feature
-  - `lib/shared/`: cross‑feature widgets and services (e.g., `routing_service.dart`)
-  - `lib/core/`: app‑wide theme, colors, constants
-  - Entry point: `lib/main.dart`
-- Platform: `android/` for Android config and manifests
-- Tests: `test/` with `*_test.dart`
+## Project Structure & Modules
+- `lib/core`: app-wide constants, services, theme, i18n.
+- `lib/features`: vertical features (map, routes, navigation, settings) with `models/`, `services/`, `widgets/`, `screens/`.
+- `lib/shared`: cross-feature services and widgets.
+- `test/`: Flutter/Dart tests (`*_test.dart`).
+- `android/`: Android build config; update permissions here.
+- `pubspec.yaml`: dependencies, assets (e.g., `logo.png`).
 
-## Build, Test, and Development Commands
-- Install deps: `flutter pub get`
-- Analyze code: `dart analyze`
-- Format code: `dart format .`
-- Run tests: `flutter test` (coverage: `flutter test --coverage`)
-- Run app (Android): `flutter run -d android`
-- Build release APK: `flutter build apk --release`
+## Build, Test, and Development
+- Install: `flutter pub get` — fetches dependencies.
+- Run (device): `flutter run` — launches the app on a connected device/emulator.
+- Run (web): `flutter run -d chrome` — web debug build.
+- Tests: `flutter test` — runs unit/widget tests in `test/`.
+- Lint: `dart analyze` — static analysis using `flutter_lints`.
+- Clean: `flutter clean` — resets build artifacts.
+- Release Android: `flutter build apk --release`.
 
-## Coding Style & Naming Conventions
-- Style: Dart with `flutter_lints` (see `analysis_options.yaml`)
-- Indentation: 2 spaces; line length ~80–100 chars
-- Naming: `lowerCamelCase` for vars/methods, `PascalCase` for classes, `snake_case.dart` for files (e.g., `main_navigation.dart`)
-- Imports: prefer relative within `lib/` feature boundaries
-- Widgets: keep small, composable; move shared UI to `lib/shared/widgets/`
+## Coding Style & Naming
+- Indentation: 2 spaces; no tabs.
+- Files: `snake_case.dart` (e.g., `route_storage_service.dart`).
+- Types/widgets: UpperCamelCase; members/locals: lowerCamelCase; constants: lowerCamelCase `const` unless enum.
+- Strings: prefer `l10n` entries under `lib/core/l10n/` for user-facing text.
+- The analyzer is configured via `analysis_options.yaml`; fix all warnings.
 
 ## Testing Guidelines
-- Framework: `flutter_test`
-- Location: place tests under `test/` mirroring `lib/` paths
-- Naming: `*_test.dart`; use clear `group()` and `test()` descriptions
-- Expectations: add/extend tests with new features; keep `flutter test` and `dart analyze` green locally
+- Frameworks: `flutter_test` with `testWidgets` for UI; pure Dart tests for utils.
+- Location: mirror `lib/` structure under `test/`.
+- Names: `*_test.dart` (e.g., `routing_service_test.dart`).
+- Run locally: `flutter test`; aim to keep tests hermetic (mock I/O and network).
 
-## Commit & Pull Request Guidelines
-- Commits: concise, imperative subject (e.g., "feat(map): add route snapping")
-- PRs: include purpose, scope, and screenshots for UI changes; reference issues (e.g., `Closes #123`)
-- Checks: ensure `dart analyze` and `flutter test` pass; run `dart format .`
-- Scope: keep PRs small and feature‑focused; update docs when structure or behavior changes
+## Commit & Pull Requests
+- Messages: use Conventional Commits (`feat:`, `fix:`, `chore:`, `refactor:`, `test:`). First line ≤ 72 chars.
+- Scope by feature when helpful (e.g., `feat(map): add route snapping`).
+- PRs: include summary, linked issues, test plan, and screenshots for UI changes. Keep diffs focused and pass `dart analyze` + `flutter test`.
 
-## Architecture Overview
-- Feature‑first: isolate domain UI/logic under `lib/features/<feature>/`
-- Shared services: cross‑cutting utilities in `lib/shared/services/` (e.g., location, routing)
-- Theming: centralized in `lib/core/theme/` with light/dark modes
-
-## Security & Configuration Tips
-- Location permissions: ensure runtime prompts and Android manifest entries align with `geolocator`/`permission_handler`
-- Secrets: do not commit API keys; use runtime config or platform‑secure storage
+## Security & Configuration
+- Do not hardcode secrets. Pass runtime config via `--dart-define=KEY=VALUE` and read in code.
+- For location features, ensure Android permissions are updated in `android/app/src/main/AndroidManifest.xml`.

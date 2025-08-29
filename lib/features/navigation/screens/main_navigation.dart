@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../map/screens/map_screen.dart';
 import '../../routes/screens/routes_screen.dart';
 import '../../settings/screens/new_settings_screen.dart';
 import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/localization_service.dart';
-import '../../../core/services/language_notifier.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -22,9 +20,7 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<LanguageNotifier>(
-      builder: (context, languageNotifier, child) {
-        final List<Widget> screens = [
+    final List<Widget> screens = [
           MapScreen(
             routeToLoad: _routeToLoad,
             onRouteSaved: () {
@@ -60,44 +56,42 @@ class _MainNavigationState extends State<MainNavigation> {
           const NewSettingsScreen(),
         ];
 
-        return Scaffold(
-          body: IndexedStack(
-            index: _currentIndex,
-            children: screens,
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: screens,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        type: BottomNavigationBarType.fixed,
+        currentIndex: _currentIndex,
+        onTap: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
+        items: [
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.map_outlined),
+            activeIcon: const Icon(Icons.map),
+            label: LocalizationService.mapTab,
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            type: BottomNavigationBarType.fixed,
-            currentIndex: _currentIndex,
-            onTap: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-            items: [
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.map_outlined),
-                activeIcon: const Icon(Icons.map),
-                label: LocalizationService.mapTab,
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.route_outlined),
-                activeIcon: const Icon(Icons.route),
-                label: LocalizationService.routesTab,
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.navigation_outlined),
-                activeIcon: const Icon(Icons.navigation),
-                label: LocalizationService.navigationTab,
-              ),
-              BottomNavigationBarItem(
-                icon: const Icon(Icons.settings_outlined),
-                activeIcon: const Icon(Icons.settings),
-                label: LocalizationService.settingsTab,
-              ),
-            ],
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.route_outlined),
+            activeIcon: const Icon(Icons.route),
+            label: LocalizationService.routesTab,
           ),
-        );
-      },
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.navigation_outlined),
+            activeIcon: const Icon(Icons.navigation),
+            label: LocalizationService.navigationTab,
+          ),
+          BottomNavigationBarItem(
+            icon: const Icon(Icons.settings_outlined),
+            activeIcon: const Icon(Icons.settings),
+            label: LocalizationService.settingsTab,
+          ),
+        ],
+      ),
     );
   }
 }

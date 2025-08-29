@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'strings_nl.dart';
-import 'strings_en.dart';
 
 abstract class AppStrings {
   // Navigation
@@ -147,25 +146,13 @@ abstract class AppStrings {
 
   // Static method to get strings based on locale
   static AppStrings of(BuildContext context) {
-    final locale = Localizations.localeOf(context);
-    
-    switch (locale.languageCode) {
-      case 'en':
-        return StringsEn();
-      case 'nl':
-      default:
-        return StringsNl();
-    }
+    // Dutch-only app
+    return StringsNl();
   }
   
   // Static method to get strings by language code
   static AppStrings byLanguage(String languageCode) {
-    switch (languageCode) {
-      case 'en':
-        return StringsEn();
-      case 'nl':
-      default:
-        return StringsNl();
-    }
+    // Dutch-only app
+    return StringsNl();
   }
 }
