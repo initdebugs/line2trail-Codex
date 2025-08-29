@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/activity_types.dart';
 import '../../../core/services/settings_service.dart';
+import '../../../core/services/localization_service.dart';
+import '../../../core/services/language_notifier.dart';
 
 class NewSettingsScreen extends StatefulWidget {
   const NewSettingsScreen({super.key});
@@ -20,6 +23,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
   bool _achievementNotifications = false;
   bool _autoPause = false;
   bool _isLoading = true;
+  String _runningSpeedUnit = 'km/h';
 
   @override
   void initState() {
@@ -34,6 +38,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
       _defaultMode = SettingsService.getDefaultActivity();
       _language = SettingsService.getLanguage();
       _unitsSystem = SettingsService.getUnitsSystem();
+      _runningSpeedUnit = SettingsService.getRunningSpeedUnit();
       _isLoading = false;
     });
   }
@@ -55,9 +60,9 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
             pinned: true,
             backgroundColor: AppColors.trailGreen,
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text(
-                'Instellingen',
-                style: TextStyle(
+              title: Text(
+                LocalizationService.settings,
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w600,
                 ),
@@ -103,13 +108,13 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                   
                   // Route Settings
                   _buildModernSection(
-                    title: 'Route Instellingen',
+                    title: LocalizationService.routeSettings,
                     icon: Icons.route,
                     color: AppColors.pathBlue,
                     children: [
                       _buildModernSwitchTile(
-                        title: 'Waypoints tonen',
-                        subtitle: 'Toon waypoints standaard op de kaart',
+                        title: LocalizationService.showWaypoints,
+                        subtitle: LocalizationService.showWaypointsDesc,
                         value: _waypointsVisible,
                         onChanged: (value) async {
                           await SettingsService.setWaypointsVisible(value);
@@ -119,9 +124,36 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                       ),
                       _buildModernDropdownTile(
                         title: 'Standaard Activiteit',
-                        subtitle: _getActivityTypeInDutch(_defaultMode),
+                        subtitle: _getLocalizedActivityType(_defaultMode),
                         icon: _defaultMode.icon,
                         onTap: () => _showActivitySelector(),
+                      ),
+                    ],
+                  ),
+                  
+                  const SizedBox(height: 16),
+                  
+                  // Speed Settings
+                  _buildModernSection(
+                    title: LocalizationService.speedSettings,
+                    icon: Icons.speed,
+                    color: AppColors.summitOrange,
+                    children: [
+                      _buildSpeedSettingTile(
+                        activity: ActivityType.walking,
+                        title: LocalizationService.walkingSpeed,
+                      ),
+                      _buildSpeedSettingTile(
+                        activity: ActivityType.running,
+                        title: LocalizationService.runningSpeed,
+                      ),
+                      _buildSpeedSettingTile(
+                        activity: ActivityType.cycling,
+                        title: LocalizationService.cyclingSpeed,
+                      ),
+                      _buildSpeedSettingTile(
+                        activity: ActivityType.hiking,
+                        title: LocalizationService.hikingSpeed,
                       ),
                     ],
                   ),
@@ -296,7 +328,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Snelle Acties',
+                  LocalizationService.quickActions,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
                     fontWeight: FontWeight.w600,
                     color: AppColors.trailGreen,
@@ -310,15 +342,15 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                 Expanded(
                   child: _buildQuickAction(
                     icon: Icons.help_outline,
-                    label: 'Help',
-                    onTap: () => _showComingSoon('Help'),
+                    label: LocalizationService.help,
+                    onTap: () => _showComingSoon(LocalizationService.help),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildQuickAction(
                     icon: Icons.info_outline,
-                    label: 'Over',
+                    label: LocalizationService.about,
                     onTap: () => _showVersionInfo(),
                   ),
                 ),
@@ -326,8 +358,8 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
                 Expanded(
                   child: _buildQuickAction(
                     icon: Icons.feedback_outlined,
-                    label: 'Feedback',
-                    onTap: () => _showComingSoon('Feedback'),
+                    label: LocalizationService.feedback,
+                    onTap: () => _showComingSoon(LocalizationService.feedback),
                   ),
                 ),
               ],
@@ -587,7 +619,7 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
             const SizedBox(height: 20),
             ...ActivityType.values.map((type) => ListTile(
               leading: Icon(type.icon, color: AppColors.trailGreen),
-              title: Text(_getActivityTypeInDutch(type)),
+              title: Text(_getLocalizedActivityType(type)),
               trailing: _defaultMode == type ? const Icon(Icons.check, color: AppColors.trailGreen) : null,
               onTap: () async {
                 await SettingsService.setDefaultActivity(type);
@@ -622,7 +654,8 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
               title: Text(lang),
               trailing: _language == lang ? const Icon(Icons.check, color: AppColors.trailGreen) : null,
               onTap: () async {
-                await SettingsService.setLanguage(lang);
+                final languageNotifier = Provider.of<LanguageNotifier>(context, listen: false);
+                await languageNotifier.setLanguage(lang);
                 setState(() => _language = lang);
                 Navigator.pop(context);
               },
@@ -702,16 +735,195 @@ class _NewSettingsScreenState extends State<NewSettingsScreen> {
     );
   }
 
-  String _getActivityTypeInDutch(ActivityType type) {
+  Widget _buildSpeedSettingTile({
+    required ActivityType activity,
+    required String title,
+  }) {
+    final speed = SettingsService.getActivitySpeed(activity);
+    String subtitle;
+    
+    if (activity == ActivityType.running && _runningSpeedUnit == 'min/km') {
+      final minPerKm = 60 / speed;
+      final minutes = minPerKm.floor();
+      final seconds = ((minPerKm - minutes) * 60).round();
+      subtitle = '${minutes}:${seconds.toString().padLeft(2, '0')} min/km';
+    } else {
+      subtitle = '${speed.toStringAsFixed(1)} km/h';
+    }
+    
+    return _buildModernListTile(
+      title: title,
+      subtitle: subtitle,
+      icon: activity.icon,
+      onTap: () => _showSpeedSelector(activity, title),
+    );
+  }
+
+  void _showSpeedSelector(ActivityType activity, String title) {
+    final currentSpeed = SettingsService.getActivitySpeed(activity);
+    double selectedSpeed = currentSpeed;
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) {
+          return Container(
+            padding: EdgeInsets.only(
+              top: 16,
+              left: 16,
+              right: 16,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                
+                if (activity == ActivityType.running) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _runningSpeedUnit == 'km/h' ? null : () {
+                            setState(() => _runningSpeedUnit = 'km/h');
+                            SettingsService.setRunningSpeedUnit('km/h');
+                            setModalState(() {});
+                          },
+                          icon: const Icon(Icons.speed),
+                          label: const Text('km/h'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _runningSpeedUnit == 'km/h' ? AppColors.trailGreen : null,
+                            foregroundColor: _runningSpeedUnit == 'km/h' ? Colors.white : null,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _runningSpeedUnit == 'min/km' ? null : () {
+                            setState(() => _runningSpeedUnit = 'min/km');
+                            SettingsService.setRunningSpeedUnit('min/km');
+                            setModalState(() {});
+                          },
+                          icon: const Icon(Icons.timer),
+                          label: const Text('min/km'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _runningSpeedUnit == 'min/km' ? AppColors.trailGreen : null,
+                            foregroundColor: _runningSpeedUnit == 'min/km' ? Colors.white : null,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                
+                if (activity == ActivityType.running && _runningSpeedUnit == 'min/km') ...[
+                  Text('Tempo: ${(60/selectedSpeed).toStringAsFixed(1)} min/km'),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: selectedSpeed,
+                    min: 6.0,
+                    max: 20.0,
+                    divisions: 70,
+                    activeColor: AppColors.trailGreen,
+                    label: '${(60/selectedSpeed).toStringAsFixed(1)} min/km',
+                    onChanged: (value) {
+                      setModalState(() => selectedSpeed = value);
+                    },
+                  ),
+                ] else ...[
+                  Text('${selectedSpeed.toStringAsFixed(1)} km/h'),
+                  const SizedBox(height: 16),
+                  Slider(
+                    value: selectedSpeed,
+                    min: _getMinSpeed(activity),
+                    max: _getMaxSpeed(activity),
+                    divisions: (_getMaxSpeed(activity) - _getMinSpeed(activity)).round(),
+                    activeColor: AppColors.trailGreen,
+                    label: '${selectedSpeed.toStringAsFixed(1)} km/h',
+                    onChanged: (value) {
+                      setModalState(() => selectedSpeed = value);
+                    },
+                  ),
+                ],
+                
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('Annuleren'),
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          await SettingsService.setActivitySpeed(activity, selectedSpeed);
+                          setState(() {});
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.trailGreen,
+                        ),
+                        child: const Text('Opslaan'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  double _getMinSpeed(ActivityType activity) {
+    switch (activity) {
+      case ActivityType.walking:
+        return 2.0;
+      case ActivityType.running:
+        return 6.0;
+      case ActivityType.cycling:
+        return 10.0;
+      case ActivityType.hiking:
+        return 1.0;
+    }
+  }
+
+  double _getMaxSpeed(ActivityType activity) {
+    switch (activity) {
+      case ActivityType.walking:
+        return 8.0;
+      case ActivityType.running:
+        return 20.0;
+      case ActivityType.cycling:
+        return 40.0;
+      case ActivityType.hiking:
+        return 6.0;
+    }
+  }
+
+  String _getLocalizedActivityType(ActivityType type) {
     switch (type) {
       case ActivityType.walking:
-        return 'Wandelen';
+        return LocalizationService.walking;
       case ActivityType.running:
-        return 'Hardlopen';
+        return LocalizationService.running;
       case ActivityType.hiking:
-        return 'Hiken';
+        return LocalizationService.hiking;
       case ActivityType.cycling:
-        return 'Fietsen';
+        return LocalizationService.cycling;
     }
   }
 }

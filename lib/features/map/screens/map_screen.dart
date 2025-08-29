@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/constants/activity_types.dart';
+import '../../../core/constants/map_layers.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/settings_service.dart';
 import '../../../core/utils/distance_formatter.dart';
@@ -39,6 +40,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   final Map<int, List<LatLng>> _snapCache = {};
   final RouteDrawingHistory _drawingHistory = RouteDrawingHistory();
   
+  List<LatLng> _userTapPoints = []; // Track actual user tap locations for waypoints
   LatLng _currentLocation = const LatLng(37.7749, -122.4194); // Default fallback
   bool _locationLoading = true;
   bool _hasLocationPermission = false;
@@ -46,6 +48,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   String _routingError = '';
   bool _showWaypoints = true;
   bool _allowMixedRouting = true; // Allow combining different transport modes
+  MapLayerType _currentMapLayer = MapLayerType.openStreetMap;
+  LatLng? _previewMarker; // Preview marker for first tap
+  List<LatLng> _distanceMarkers = []; // Kilometer/mile markers along route
 
   @override
   void initState() {
@@ -54,6 +59,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     _loadSettings();
     // Test routing service when app starts
     RoutingService.testRouting();
+    
+    // Start background location tracking for better UX
+    LocationService.startLocationTracking();
     
     // Load route if provided
     if (widget.routeToLoad != null) {
@@ -68,10 +76,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     await SettingsService.init();
     final defaultActivity = SettingsService.getDefaultActivity();
     final showWaypoints = SettingsService.getWaypointsVisible();
+    final mapLayerName = SettingsService.getMapLayer();
+    final mapLayer = MapLayerHelper.fromString(mapLayerName);
     
     setState(() {
       _selectedActivity = defaultActivity;
       _showWaypoints = showWaypoints;
+      _currentMapLayer = mapLayer;
     });
   }
 
@@ -141,8 +152,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             children: [
               // Tile layer
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: _currentMapLayer.urlTemplate,
                 userAgentPackageName: 'com.example.pathify',
+                retinaMode: RetinaMode.isHighDensity(context),
+                additionalOptions: const {
+                  'attribution': '',
+                },
               ),
               // Route polyline (prefer snapped path)
               if (_snappedRoute.isNotEmpty)
@@ -199,12 +214,82 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
+                    // Preview marker for first tap
+                    if (_previewMarker != null)
+                      Marker(
+                        point: _previewMarker!,
+                        width: 32,
+                        height: 32,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.pathBlue.withValues(alpha: 0.8),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: AppColors.textInverse,
+                              width: 3,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: AppColors.pathBlue.withValues(alpha: 0.4),
+                                blurRadius: 8,
+                                spreadRadius: 3,
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.add_location_alt,
+                            color: AppColors.textInverse,
+                            size: 16,
+                          ),
+                        ),
+                      ),
+                    // Distance markers (km/mile markers along route)
+                    ..._distanceMarkers.asMap().entries.map((entry) {
+                      final index = entry.key;
+                      final markerPoint = entry.value;
+                      final unitsSystem = SettingsService.getUnitsSystem();
+                      final isMetric = unitsSystem == 'Metric';
+                      final markerText = '${index + 1}${isMetric ? 'k' : 'm'}';
+                      
+                      return Marker(
+                        point: markerPoint,
+                        width: 28,
+                        height: 28,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.summitOrange.withValues(alpha: 0.9),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: Colors.white,
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.3),
+                                blurRadius: 4,
+                                spreadRadius: 1,
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Text(
+                              markerText,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
                   ],
                 ),
-              // Waypoint markers
+              // Waypoint markers (only show user tap points)
               EditableWaypointLayer(
-                points: _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute,
-                showWaypoints: _showWaypoints && (_currentRoute.isNotEmpty || _snappedRoute.isNotEmpty),
+                points: _userTapPoints,
+                showWaypoints: _showWaypoints && _userTapPoints.isNotEmpty,
                 onWaypointTapped: _onWaypointTapped,
                 onWaypointDragged: _onWaypointDragged,
               ),
@@ -254,6 +339,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                 onMore: _showRouteEditingMenu,
                 showWaypoints: _showWaypoints,
                 onToggleWaypoints: _toggleWaypointMode,
+                onLoopBack: _loopBackToStart,
+                canLoopBack: _canLoopBack(),
               ),
             ),
 
@@ -304,19 +391,50 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   void _onMapTap(TapPosition tapPosition, LatLng point) async {
     if (_isDrawingMode) {
-      setState(() {
-        _currentRoute.add(point);
-        _routingError = '';
-      });
+      if (_currentRoute.isEmpty && _previewMarker == null) {
+        // First tap: show preview marker
+        setState(() {
+          _previewMarker = point;
+          _routingError = '';
+        });
+      } else if (_currentRoute.isEmpty && _previewMarker != null) {
+        // Second tap: start actual route with preview marker as first point
+        setState(() {
+          _currentRoute.add(_previewMarker!);
+          _currentRoute.add(point);
+          _userTapPoints.add(_previewMarker!);
+          _userTapPoints.add(point);
+          _previewMarker = null; // Clear preview marker
+          _routingError = '';
+          // Calculate distance markers for the initial route
+          _calculateDistanceMarkers();
+        });
 
-      // Add to history
-      _drawingHistory.addState(
-        _currentRoute,
-        'Added point ${_currentRoute.length}',
-      );
+        // Add to history
+        _drawingHistory.addState(
+          _currentRoute,
+          'Started route with ${_currentRoute.length} points',
+        );
 
-      // Always snap after 2+ points
-      if (_currentRoute.length >= 2) {
+        // Snap the initial route segment
+        await _snapCurrentRoute();
+      } else {
+        // Subsequent taps: continue adding to existing route
+        setState(() {
+          _currentRoute.add(point);
+          _userTapPoints.add(point);
+          _routingError = '';
+          // Calculate distance markers for current route (even before snapping)
+          _calculateDistanceMarkers();
+        });
+
+        // Add to history
+        _drawingHistory.addState(
+          _currentRoute,
+          'Added point ${_currentRoute.length}',
+        );
+
+        // Always snap after 2+ points
         await _snapCurrentRoute();
       }
     }
@@ -325,9 +443,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void _toggleDrawingMode() {
     setState(() {
       _isDrawingMode = !_isDrawingMode;
-      if (!_isDrawingMode && _currentRoute.isNotEmpty && _snappedRoute.isEmpty) {
-        // Snap to path when finishing drawing
-        _snapCurrentRoute();
+      if (!_isDrawingMode) {
+        // Clear preview marker when exiting drawing mode
+        _previewMarker = null;
+        if (_currentRoute.isNotEmpty && _snappedRoute.isEmpty) {
+          // Snap to path when finishing drawing
+          _snapCurrentRoute();
+        }
       }
     });
   }
@@ -363,6 +485,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _snappedRoute = snappedPoints;
           _snapCache[_currentRoute.length] = List<LatLng>.of(snappedPoints);
           _isSnapping = false;
+          // Calculate distance markers for the new route
+          _calculateDistanceMarkers();
         });
       }
     } catch (e) {
@@ -386,6 +510,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     setState(() {
       _currentRoute.clear();
       _currentRoute.addAll(newRoute);
+      // Keep user tap points in sync with current route length
+      if (_userTapPoints.length > newRoute.length) {
+        _userTapPoints.removeRange(newRoute.length, _userTapPoints.length);
+      }
       _snappedRoute.clear(); // Clear snapped route when undoing
       _routingError = '';
     });
@@ -437,11 +565,141 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     setState(() {
       _currentRoute.clear();
       _snappedRoute.clear();
+      _userTapPoints.clear(); // Clear user tap points too
       _snapCache.clear();
       _isDrawingMode = false;
       _routingError = '';
+      _previewMarker = null; // Clear preview marker
+      _distanceMarkers.clear(); // Clear distance markers
     });
     _drawingHistory.clear();
+  }
+
+  bool _canLoopBack() {
+    // Can loop back if we have at least 2 points
+    return _currentRoute.length >= 2;
+  }
+
+  void _loopBackToStart() async {
+    if (!_canLoopBack()) return;
+
+    final startPoint = _currentRoute.first;
+    final endPoint = _currentRoute.last;
+
+    // Check if start and end are already very close (already a loop)
+    final distance = const Distance().as(LengthUnit.Kilometer, startPoint, endPoint);
+    if (distance < 0.01) {
+      // Points are less than 10 meters apart, consider it already a loop
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Route is al een lus!'),
+          backgroundColor: AppColors.warningAmber,
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _isSnapping = true;
+      _routingError = '';
+    });
+
+    try {
+      // Create a route from end point back to start point
+      final loopBackPoints = [endPoint, startPoint];
+      
+      debugPrint('🔄 Creating loop back route from ${endPoint.latitude.toStringAsFixed(4)},${endPoint.longitude.toStringAsFixed(4)} to ${startPoint.latitude.toStringAsFixed(4)},${startPoint.longitude.toStringAsFixed(4)}');
+      
+      // Use routing service to get the path back to start
+      final snappedLoopBack = await RoutingService.snapToPathMixed(
+        points: loopBackPoints,
+        primaryActivityType: _selectedActivity,
+        allowMixedModes: _allowMixedRouting,
+      );
+
+      if (snappedLoopBack.isNotEmpty) {
+        setState(() {
+          // Add the loop back points (excluding the first point to avoid duplication)
+          _currentRoute.addAll(snappedLoopBack.skip(1));
+          _userTapPoints.add(startPoint); // Add start point as waypoint
+          _isSnapping = false;
+        });
+
+        // Add to history
+        _drawingHistory.addState(
+          _currentRoute,
+          'Added loop back to start',
+        );
+
+        // Re-snap the entire route for consistency
+        await _snapCurrentRoute();
+
+        debugPrint('✅ Loop back route created successfully with ${snappedLoopBack.length} points');
+      } else {
+        setState(() {
+          _isSnapping = false;
+          _routingError = 'Kon geen route terug naar start vinden';
+        });
+      }
+    } catch (e) {
+      debugPrint('❌ Loop back route failed: $e');
+      setState(() {
+        _isSnapping = false;
+        _routingError = 'Fout bij maken van lus route: ${e.toString()}';
+      });
+    }
+  }
+
+  void _calculateDistanceMarkers() {
+    _distanceMarkers.clear();
+    
+    // Get the route to analyze (prefer snapped route if available)
+    final route = _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute;
+    debugPrint('🔍 Calculating distance markers for route with ${route.length} points');
+    
+    if (route.length < 2) {
+      debugPrint('⚠️ Route too short for distance markers');
+      return;
+    }
+
+    // Get units system from settings
+    final unitsSystem = SettingsService.getUnitsSystem();
+    final isMetric = unitsSystem == 'Metric';
+    final markerInterval = isMetric ? 1.0 : 1.60934; // 1 km or 1 mile in km
+    
+    debugPrint('📏 Using ${isMetric ? 'metric' : 'imperial'} units, marker interval: ${markerInterval}km');
+
+    double cumulativeDistance = 0.0;
+    double nextMarkerDistance = markerInterval;
+
+    for (int i = 0; i < route.length - 1; i++) {
+      final currentPoint = route[i];
+      final nextPoint = route[i + 1];
+      
+      final segmentDistance = const Distance().as(LengthUnit.Kilometer, currentPoint, nextPoint);
+      final segmentStart = cumulativeDistance;
+      final segmentEnd = cumulativeDistance + segmentDistance;
+
+      // Check if any markers fall within this segment
+      while (nextMarkerDistance >= segmentStart && nextMarkerDistance <= segmentEnd) {
+        // Calculate the position along the segment where the marker should be
+        final ratio = (nextMarkerDistance - segmentStart) / segmentDistance;
+        
+        // Interpolate between current and next point
+        final markerLat = currentPoint.latitude + (nextPoint.latitude - currentPoint.latitude) * ratio;
+        final markerLng = currentPoint.longitude + (nextPoint.longitude - currentPoint.longitude) * ratio;
+        
+        _distanceMarkers.add(LatLng(markerLat, markerLng));
+        debugPrint('🎯 Added distance marker ${_distanceMarkers.length} at ${markerLat.toStringAsFixed(6)}, ${markerLng.toStringAsFixed(6)}');
+        
+        // Move to next marker distance
+        nextMarkerDistance += markerInterval;
+      }
+
+      cumulativeDistance = segmentEnd;
+    }
+
+    debugPrint('📏 Generated ${_distanceMarkers.length} distance markers total');
   }
 
   void _saveRoute() async {
@@ -475,9 +733,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       // Save to storage
       await RouteStorageService.saveRoute(savedRoute);
       
-      // Notify parent that route was saved
-      widget.onRouteSaved?.call();
-      
       // Clear current route
       setState(() {
         _currentRoute.clear();
@@ -485,8 +740,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         _snapCache.clear();
         _isDrawingMode = false;
         _routingError = '';
+        _distanceMarkers.clear(); // Clear distance markers too
       });
       _drawingHistory.clear();
+      
+      // Notify parent that route was saved - defer to avoid setState during build
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        widget.onRouteSaved?.call();
+      });
       
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
@@ -635,9 +896,48 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
   void _showLayerOptions() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Laagopties komen binnenkort!'),
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Kaartlaag Kiezen',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ...MapLayerType.values.map((layer) => ListTile(
+              leading: Icon(
+                Icons.map,
+                color: _currentMapLayer == layer ? AppColors.trailGreen : AppColors.textSecondary,
+              ),
+              title: Text(layer.displayName),
+              subtitle: Text(layer.attribution),
+              trailing: _currentMapLayer == layer 
+                ? const Icon(Icons.check, color: AppColors.trailGreen) 
+                : null,
+              onTap: () async {
+                await SettingsService.setMapLayer(layer.displayName);
+                setState(() {
+                  _currentMapLayer = layer;
+                });
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Kaartlaag gewijzigd naar ${layer.displayName}')),
+                );
+              },
+            )),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
@@ -1316,5 +1616,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    LocationService.stopLocationTracking();
+    super.dispose();
   }
 }

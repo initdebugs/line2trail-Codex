@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/activity_types.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/localization_service.dart';
 
 class ActivityModeChip extends StatelessWidget {
   final ActivityType selected;
@@ -53,7 +54,7 @@ class ActivityModeChip extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    selected.displayName,
+                    _getLocalizedActivityName(selected),
                     style: Theme.of(context).textTheme.labelMedium?.copyWith(
                       fontWeight: FontWeight.w600,
                       color: disabled ? AppColors.textSecondary : AppColors.textPrimary,
@@ -75,6 +76,19 @@ class ActivityModeChip extends StatelessWidget {
     );
   }
 
+  String _getLocalizedActivityName(ActivityType type) {
+    switch (type) {
+      case ActivityType.walking:
+        return LocalizationService.walking;
+      case ActivityType.running:
+        return LocalizationService.running;
+      case ActivityType.hiking:
+        return LocalizationService.hiking;
+      case ActivityType.cycling:
+        return LocalizationService.cycling;
+    }
+  }
+
   void _showPicker(BuildContext context) async {
     final result = await showModalBottomSheet<ActivityType>(
       context: context,
@@ -88,7 +102,7 @@ class ActivityModeChip extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Kies Activiteit', style: Theme.of(context).textTheme.titleMedium),
+                Text(LocalizationService.chooseActivity, style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 GridView.builder(
                   shrinkWrap: true,
@@ -105,7 +119,7 @@ class ActivityModeChip extends StatelessWidget {
                     final isSelected = mode == selected;
                     return _ModeTile(
                       icon: mode.icon,
-                      label: mode.displayName,
+                      label: _getLocalizedActivityName(mode),
                       selected: isSelected,
                       onTap: () => Navigator.of(context).pop(mode),
                     );

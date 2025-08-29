@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/localization_service.dart';
 
 class RouteTools extends StatelessWidget {
   final VoidCallback onUndo;
@@ -8,6 +9,8 @@ class RouteTools extends StatelessWidget {
   final VoidCallback onMore;
   final bool showWaypoints;
   final VoidCallback onToggleWaypoints;
+  final VoidCallback onLoopBack;
+  final bool canLoopBack;
 
   const RouteTools({
     super.key,
@@ -17,6 +20,8 @@ class RouteTools extends StatelessWidget {
     required this.onMore,
     required this.showWaypoints,
     required this.onToggleWaypoints,
+    required this.onLoopBack,
+    required this.canLoopBack,
   });
 
   @override
@@ -42,16 +47,22 @@ class RouteTools extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _Tool(icon: Icons.undo, label: 'Ongedaan', onTap: onUndo),
-            _Tool(icon: Icons.redo, label: 'Opnieuw', onTap: onRedo),
-            _Tool(
+            Expanded(child: _Tool(icon: Icons.undo, label: LocalizationService.undo, onTap: onUndo)),
+            Expanded(child: _Tool(icon: Icons.redo, label: LocalizationService.redo, onTap: onRedo)),
+            Expanded(child: _Tool(
               icon: showWaypoints ? Icons.location_on : Icons.location_off,
-              label: showWaypoints ? 'Tonen' : 'Verbergen',
+              label: showWaypoints ? LocalizationService.show : LocalizationService.hide,
               onTap: onToggleWaypoints,
               activeColor: showWaypoints ? AppColors.pathBlue : AppColors.textPrimary,
-            ),
-            _Tool(icon: Icons.clear_all, label: 'Wissen', onTap: onClear),
-            _Tool(icon: Icons.more_horiz, label: 'Meer', onTap: onMore),
+            )),
+            Expanded(child: _Tool(
+              icon: Icons.loop,
+              label: LocalizationService.loop,
+              onTap: canLoopBack ? onLoopBack : () {},
+              activeColor: canLoopBack ? AppColors.summitOrange : AppColors.textSecondary,
+            )),
+            Expanded(child: _Tool(icon: Icons.clear_all, label: LocalizationService.clear, onTap: onClear)),
+            Expanded(child: _Tool(icon: Icons.more_horiz, label: LocalizationService.more, onTap: onMore)),
           ],
         ),
       ),

@@ -65,19 +65,22 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
     );
 
     // Set initial animation values without animation (for first render)
-    if (!widget.isDrawing && !widget.hasRoute) {
-      _activityModeController.value = 1.0;
-      _roundtripButtonController.value = 1.0;
-      _saveButtonController.value = 0.0;
-    } else if (!widget.isDrawing && widget.hasRoute) {
-      _activityModeController.value = 1.0;
-      _roundtripButtonController.value = 0.0; // Hide roundtrip when route exists
-      _saveButtonController.value = 1.0;
-    } else {
-      _activityModeController.value = 0.0;
-      _saveButtonController.value = 1.0;
-      _roundtripButtonController.value = 0.0;
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!widget.isDrawing && !widget.hasRoute) {
+        _activityModeController.value = 1.0;
+        _roundtripButtonController.value = 1.0;
+        _saveButtonController.value = 0.0;
+      } else if (!widget.isDrawing && widget.hasRoute) {
+        _activityModeController.value = 1.0;
+        _roundtripButtonController.value = 0.0;
+        _saveButtonController.value = 1.0;
+      } else {
+        _activityModeController.value = 0.0;
+        _saveButtonController.value = 1.0;
+        _roundtripButtonController.value = 0.0;
+      }
+    });
   }
 
 
@@ -85,7 +88,7 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
   void didUpdateWidget(RouteBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    // Only animate if the drawing state actually changed
+    // Always animate when drawing state changes
     if (widget.isDrawing != oldWidget.isDrawing) {
       if (widget.isDrawing && !oldWidget.isDrawing) {
         // Started drawing - animate to drawing state

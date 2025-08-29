@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
@@ -8,9 +9,63 @@ class LocationService {
   static const String _lastLatKey = 'last_latitude';
   static const String _lastLngKey = 'last_longitude';
   static const LatLng _defaultLocation = LatLng(37.7749, -122.4194); // San Francisco fallback
+  
+  static Timer? _locationTimer;
+  static LatLng? _cachedLocation;
+  static bool _isLocationServiceActive = false;
+
+  /// Start periodic location updates every 5 seconds
+  static void startLocationTracking() async {
+    if (_isLocationServiceActive) return;
+    
+    _isLocationServiceActive = true;
+    
+    // Get initial location
+    await _updateCachedLocation();
+    
+    // Set up timer for periodic updates
+    _locationTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+      await _updateCachedLocation();
+    });
+  }
+  
+  /// Stop periodic location updates
+  static void stopLocationTracking() {
+    _locationTimer?.cancel();
+    _locationTimer = null;
+    _isLocationServiceActive = false;
+  }
+  
+  /// Get cached location (much faster than getCurrentLocation)
+  static LatLng? getCachedLocation() {
+    return _cachedLocation;
+  }
+  
+  /// Update the cached location in background
+  static Future<void> _updateCachedLocation() async {
+    try {
+      final location = await _getCurrentLocationInternal();
+      if (location != null) {
+        _cachedLocation = location;
+      }
+    } catch (e) {
+      debugPrint('Background location update failed: $e');
+    }
+  }
 
   /// Get current user location with permission handling
   static Future<LatLng?> getCurrentLocation() async {
+    // If we have a recent cached location, return it immediately
+    if (_cachedLocation != null) {
+      return _cachedLocation;
+    }
+    
+    // Otherwise get fresh location
+    return await _getCurrentLocationInternal();
+  }
+  
+  /// Internal method to get current location
+  static Future<LatLng?> _getCurrentLocationInternal() async {
     try {
       // Check if location services are enabled
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();

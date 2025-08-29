@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../map/screens/map_screen.dart';
 import '../../routes/screens/routes_screen.dart';
 import '../../settings/screens/new_settings_screen.dart';
 import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/localization_service.dart';
+import '../../../core/services/language_notifier.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -19,78 +22,82 @@ class _MainNavigationState extends State<MainNavigation> {
 
   @override
   Widget build(BuildContext context) {
-    final List<Widget> screens = [
-      MapScreen(
-        routeToLoad: _routeToLoad,
-        onRouteSaved: () {
-          // Mark that routes should refresh and switch to routes tab
-          setState(() {
-            _shouldRefreshRoutes = true;
-            _currentIndex = 1;
-          });
-        },
-        onRouteLoaded: () {
-          // Clear the route after it's loaded
-          setState(() {
-            _routeToLoad = null;
-          });
-        },
-      ),
-      RoutesScreen(
-        shouldRefresh: _shouldRefreshRoutes,
-        onRefreshComplete: () {
-          setState(() {
-            _shouldRefreshRoutes = false;
-          });
-        },
-        onRouteSelected: (route) {
-          // Set the route to load and switch to map tab
-          setState(() {
-            _routeToLoad = route;
-            _currentIndex = 0;
-          });
-        },
-      ),
-      const PlaceholderScreen(title: 'Navigatie'),
-      const NewSettingsScreen(),
-    ];
+    return Consumer<LanguageNotifier>(
+      builder: (context, languageNotifier, child) {
+        final List<Widget> screens = [
+          MapScreen(
+            routeToLoad: _routeToLoad,
+            onRouteSaved: () {
+              // Mark that routes should refresh and switch to routes tab
+              setState(() {
+                _shouldRefreshRoutes = true;
+                _currentIndex = 1;
+              });
+            },
+            onRouteLoaded: () {
+              // Clear the route after it's loaded
+              setState(() {
+                _routeToLoad = null;
+              });
+            },
+          ),
+          RoutesScreen(
+            shouldRefresh: _shouldRefreshRoutes,
+            onRefreshComplete: () {
+              setState(() {
+                _shouldRefreshRoutes = false;
+              });
+            },
+            onRouteSelected: (route) {
+              // Set the route to load and switch to map tab
+              setState(() {
+                _routeToLoad = route;
+                _currentIndex = 0;
+              });
+            },
+          ),
+          PlaceholderScreen(title: LocalizationService.navigationTab),
+          const NewSettingsScreen(),
+        ];
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: screens,
-      ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
-        },
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.map_outlined),
-            activeIcon: Icon(Icons.map),
-            label: 'Kaart',
+        return Scaffold(
+          body: IndexedStack(
+            index: _currentIndex,
+            children: screens,
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.route_outlined),
-            activeIcon: Icon(Icons.route),
-            label: 'Routes',
+          bottomNavigationBar: BottomNavigationBar(
+            type: BottomNavigationBarType.fixed,
+            currentIndex: _currentIndex,
+            onTap: (index) {
+              setState(() {
+                _currentIndex = index;
+              });
+            },
+            items: [
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.map_outlined),
+                activeIcon: const Icon(Icons.map),
+                label: LocalizationService.mapTab,
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.route_outlined),
+                activeIcon: const Icon(Icons.route),
+                label: LocalizationService.routesTab,
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.navigation_outlined),
+                activeIcon: const Icon(Icons.navigation),
+                label: LocalizationService.navigationTab,
+              ),
+              BottomNavigationBarItem(
+                icon: const Icon(Icons.settings_outlined),
+                activeIcon: const Icon(Icons.settings),
+                label: LocalizationService.settingsTab,
+              ),
+            ],
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.navigation_outlined),
-            activeIcon: Icon(Icons.navigation),
-            label: 'Navigeren',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings_outlined),
-            activeIcon: Icon(Icons.settings),
-            label: 'Instellingen',
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -120,12 +127,12 @@ class PlaceholderScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              '$title Komt Binnenkort',
+              '$title ${LocalizationService.comingSoon}',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
             Text(
-              'Deze functie wordt binnenkort beschikbaar.',
+              LocalizationService.featureComingSoon,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -135,12 +142,12 @@ class PlaceholderScreen extends StatelessWidget {
             ElevatedButton(
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Functie in ontwikkeling'),
+                  SnackBar(
+                    content: Text(LocalizationService.featureInDevelopment),
                   ),
                 );
               },
-              child: const Text('Meer Info'),
+              child: Text(LocalizationService.moreInfo),
             ),
           ],
         ),
