@@ -19,7 +19,7 @@ class GeocodingService {
         },
         options: Options(
           headers: {
-            'User-Agent': 'Line2Trail-App/1.0',
+            'User-Agent': 'Pathify-App/1.0',
           },
         ),
       );

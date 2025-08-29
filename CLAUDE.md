@@ -91,4 +91,7 @@ The app is in Phase 3 of development (see DEVELOPMENT_PLAN.md):
 - Route snapping attempts real OpenRouteService API, falls back to mock service
 - Activity types support different routing profiles (walking, cycling, etc.)
 - Theme follows Material 3 design system with custom outdoor/trail-inspired colors
-- Bottom navigation with 4 tabs: Map, Routes, Navigate (placeholder), Settings (placeholder)
+- Bottom navigation with 4 tabs: Kaart (Map), Routes, Navigeren (Navigate), Instellingen (Settings)
+- **Language**: App interface is in Dutch by default, with English as secondary option in settings
+- All user-facing text, labels, buttons, and messages should be in Dutch
+- Settings screen includes comprehensive placeholder options for future features

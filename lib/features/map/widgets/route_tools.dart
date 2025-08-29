@@ -42,16 +42,16 @@ class RouteTools extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _Tool(icon: Icons.undo, label: 'Undo', onTap: onUndo),
-            _Tool(icon: Icons.redo, label: 'Redo', onTap: onRedo),
+            _Tool(icon: Icons.undo, label: 'Ongedaan', onTap: onUndo),
+            _Tool(icon: Icons.redo, label: 'Opnieuw', onTap: onRedo),
             _Tool(
               icon: showWaypoints ? Icons.location_on : Icons.location_off,
-              label: showWaypoints ? 'Show' : 'Hide',
+              label: showWaypoints ? 'Tonen' : 'Verbergen',
               onTap: onToggleWaypoints,
               activeColor: showWaypoints ? AppColors.pathBlue : AppColors.textPrimary,
             ),
-            _Tool(icon: Icons.clear_all, label: 'Clear', onTap: onClear),
-            _Tool(icon: Icons.more_horiz, label: 'More', onTap: onMore),
+            _Tool(icon: Icons.clear_all, label: 'Wissen', onTap: onClear),
+            _Tool(icon: Icons.more_horiz, label: 'Meer', onTap: onMore),
           ],
         ),
       ),

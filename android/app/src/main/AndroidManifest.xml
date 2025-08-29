@@ -14,7 +14,7 @@
     <!-- Wake lock for navigation mode -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <application
-        android:label="Line2Trail"
+        android:label="Pathify"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

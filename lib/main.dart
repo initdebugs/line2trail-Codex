@@ -3,16 +3,16 @@ import 'core/theme/app_theme.dart';
 import 'features/navigation/screens/main_navigation.dart';
 
 void main() {
-  runApp(const Line2TrailApp());
+  runApp(const PathifyApp());
 }
 
-class Line2TrailApp extends StatelessWidget {
-  const Line2TrailApp({super.key});
+class PathifyApp extends StatelessWidget {
+  const PathifyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Line2Trail',
+      title: 'Pathify',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: ThemeMode.system,

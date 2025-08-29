@@ -64,11 +64,15 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
       curve: Curves.easeInOut,
     );
 
-    // Initial state
-    if (!widget.isDrawing) {
+    // Set initial animation values without animation (for first render)
+    if (!widget.isDrawing && !widget.hasRoute) {
       _activityModeController.value = 1.0;
-      _saveButtonController.value = 0.0;
       _roundtripButtonController.value = 1.0;
+      _saveButtonController.value = 0.0;
+    } else if (!widget.isDrawing && widget.hasRoute) {
+      _activityModeController.value = 1.0;
+      _roundtripButtonController.value = 0.0; // Hide roundtrip when route exists
+      _saveButtonController.value = 1.0;
     } else {
       _activityModeController.value = 0.0;
       _saveButtonController.value = 1.0;
@@ -76,30 +80,41 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
     }
   }
 
+
   @override
   void didUpdateWidget(RouteBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     
-    // Animate based on drawing state
-    if (widget.isDrawing && !oldWidget.isDrawing) {
-      // Started drawing - hide activity mode and roundtrip, show save button
-      _activityModeController.reverse();
-      _saveButtonController.forward();
-      _roundtripButtonController.reverse();
-    } else if (!widget.isDrawing && oldWidget.isDrawing) {
-      // Stopped drawing - show activity mode and roundtrip, hide save button if no route
-      _activityModeController.forward();
-      _roundtripButtonController.forward();
-      if (!widget.hasRoute) {
-        _saveButtonController.reverse();
+    // Only animate if the drawing state actually changed
+    if (widget.isDrawing != oldWidget.isDrawing) {
+      if (widget.isDrawing && !oldWidget.isDrawing) {
+        // Started drawing - animate to drawing state
+        _activityModeController.reverse();
+        _saveButtonController.forward();
+        _roundtripButtonController.reverse();
+      } else if (!widget.isDrawing && oldWidget.isDrawing) {
+        // Stopped drawing - animate to non-drawing state
+        _activityModeController.forward();
+        // Only show roundtrip if no route exists
+        if (!widget.hasRoute) {
+          _roundtripButtonController.forward();
+          _saveButtonController.reverse();
+        } else {
+          _roundtripButtonController.reverse(); // Keep hidden if route exists
+          _saveButtonController.forward();
+        }
       }
-    }
-    
-    // Handle save button based on route existence
-    if (widget.hasRoute && widget.onSave != null) {
-      _saveButtonController.forward();
-    } else if (!widget.isDrawing) {
-      _saveButtonController.reverse();
+    } else {
+      // No state change, but check route existence for save button and roundtrip visibility
+      if (widget.hasRoute != oldWidget.hasRoute) {
+        if (widget.hasRoute && widget.onSave != null) {
+          _saveButtonController.forward();
+          _roundtripButtonController.reverse(); // Hide roundtrip when route appears
+        } else if (!widget.isDrawing) {
+          _saveButtonController.reverse();
+          _roundtripButtonController.forward(); // Show roundtrip when route is cleared
+        }
+      }
     }
   }
 
@@ -147,6 +162,7 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
                         child: ActivityModeChip(
                           selected: widget.selectedActivity,
                           onChanged: widget.onActivityChanged,
+                          disabled: widget.hasRoute,
                         ),
                       ),
                     ),
@@ -241,7 +257,7 @@ class _PrimaryActionButton extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 Text(
-                  isDrawing ? 'Stop' : 'Draw',
+                  isDrawing ? 'Stop' : 'Tekenen',
                   style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: AppColors.textInverse,
                     fontWeight: FontWeight.w600,
@@ -344,7 +360,7 @@ class _SaveButton extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   Text(
-                    'Save',
+                    'Opslaan',
                     style: Theme.of(context).textTheme.labelLarge?.copyWith(
                       color: AppColors.trailGreen,
                       fontWeight: FontWeight.w600,

@@ -1,5 +1,7 @@
-1. Routes are not instantly visible to see in the routes screen. make it so that when you save a route, the routes screen auto refreshes.
-2. Pressing a route from the routes screen just opens a black screen and does nothing else.
-3. The button for roundtrip does not look nice. Please reposition everything in that section to make it look nice
-4. In the routes screen it says 'Unknown location' instead of the city in which this takes place.
-5. In the routes screen, make it so instead of a dropdown, the navigate and delete button are visible without having to open the dropdown. Navigate a blue navigation button with white arrow.
+1. Make the following settings actually functional and remembered when the app closes and reopens:
+- Language
+
+
+2. The animations in the routebar only work when the user is already drawing, then pressing stop or draw. Looks good. When the user is not yet drawing, pressing 'Draw' moves it instantly instead of the smooth animations. Please fix that so the animations always work in the routebar.
+
+3. Currently when I press the location button to go to the users current location, it has to fetch location first which takes a few seconds. Maybe update the users location every 5 seconds and use the last known location when pressing that button? Would improve the UX

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../map/screens/map_screen.dart';
 import '../../routes/screens/routes_screen.dart';
+import '../../settings/screens/new_settings_screen.dart';
 import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 
@@ -50,8 +51,8 @@ class _MainNavigationState extends State<MainNavigation> {
           });
         },
       ),
-      const PlaceholderScreen(title: 'Navigation'),
-      const PlaceholderScreen(title: 'Settings'),
+      const PlaceholderScreen(title: 'Navigatie'),
+      const NewSettingsScreen(),
     ];
 
     return Scaffold(
@@ -71,7 +72,7 @@ class _MainNavigationState extends State<MainNavigation> {
           BottomNavigationBarItem(
             icon: Icon(Icons.map_outlined),
             activeIcon: Icon(Icons.map),
-            label: 'Map',
+            label: 'Kaart',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.route_outlined),
@@ -81,12 +82,12 @@ class _MainNavigationState extends State<MainNavigation> {
           BottomNavigationBarItem(
             icon: Icon(Icons.navigation_outlined),
             activeIcon: Icon(Icons.navigation),
-            label: 'Navigate',
+            label: 'Navigeren',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.settings_outlined),
             activeIcon: Icon(Icons.settings),
-            label: 'Settings',
+            label: 'Instellingen',
           ),
         ],
       ),
@@ -119,12 +120,12 @@ class PlaceholderScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Text(
-              '$title Coming Soon',
+              '$title Komt Binnenkort',
               style: Theme.of(context).textTheme.headlineSmall,
             ),
             const SizedBox(height: 8),
             Text(
-              'This feature will be available in a future update.',
+              'Deze functie wordt binnenkort beschikbaar.',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: AppColors.textSecondary,
                   ),
@@ -135,11 +136,11 @@ class PlaceholderScreen extends StatelessWidget {
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Feature under development'),
+                    content: Text('Functie in ontwikkeling'),
                   ),
                 );
               },
-              child: const Text('Learn More'),
+              child: const Text('Meer Info'),
             ),
           ],
         ),

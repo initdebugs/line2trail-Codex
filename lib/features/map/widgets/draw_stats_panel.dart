@@ -37,14 +37,14 @@ class DrawStatsPanel extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _Metric(label: 'Distance', value: distance, icon: Icons.straighten),
+          _Metric(label: 'Afstand', value: distance, icon: Icons.straighten),
           Container(
             width: 1,
             height: 24,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             color: AppColors.outline.withOpacity(0.5),
           ),
-          _Metric(label: 'Time', value: time, icon: Icons.schedule_outlined),
+          _Metric(label: 'Tijd', value: time, icon: Icons.schedule_outlined),
           if (isLoading) ...[
             Container(
               width: 1,

@@ -11,13 +11,13 @@ extension ActivityTypeExtension on ActivityType {
   String get displayName {
     switch (this) {
       case ActivityType.walking:
-        return 'Walking';
+        return 'Wandelen';
       case ActivityType.running:
-        return 'Running';
+        return 'Hardlopen';
       case ActivityType.hiking:
-        return 'Hiking';
+        return 'Hiken';
       case ActivityType.cycling:
-        return 'Cycling';
+        return 'Fietsen';
     }
   }
 

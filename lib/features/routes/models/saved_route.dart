@@ -80,11 +80,11 @@ class SavedRoute {
     final diff = now.difference(createdAt);
     
     if (diff.inDays == 0) {
-      return 'Today';
+      return 'Vandaag';
     } else if (diff.inDays == 1) {
-      return 'Yesterday';
+      return 'Gisteren';
     } else if (diff.inDays < 7) {
-      return '${diff.inDays} days ago';
+      return '${diff.inDays} dagen geleden';
     } else {
       return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
     }

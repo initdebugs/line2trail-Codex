@@ -63,7 +63,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Routes'),
+        title: const Text('Mijn Routes'),
         actions: [
           IconButton(
             onPressed: _showFilterOptions,
@@ -78,7 +78,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
             padding: const EdgeInsets.all(16),
             child: TextField(
               decoration: InputDecoration(
-                hintText: 'Search routes...',
+                hintText: 'Routes zoeken...',
                 prefixIcon: const Icon(Icons.search),
                 suffixIcon: _searchQuery.isNotEmpty
                     ? IconButton(
@@ -205,7 +205,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
               spacing: 8,
               children: [
                 FilterChip(
-                  label: const Text('All'),
+                  label: const Text('Alle'),
                   selected: _filterActivity == null,
                   onSelected: (_) {
                     setState(() {
@@ -308,7 +308,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
                                   ),
                                   SizedBox(width: 6),
                                   Text(
-                                    'Navigate',
+                                    'Navigeren',
                                     style: TextStyle(
                                       color: Colors.white,
                                       fontSize: 12,
@@ -403,7 +403,7 @@ class _RoutesScreenState extends State<RoutesScreen> {
   void _navigateRoute(SavedRoute route) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Navigation for ${route.name} - Coming soon!'),
+        content: Text('Navigatie voor ${route.name} - Komt binnenkort!'),
       ),
     );
   }
@@ -412,19 +412,19 @@ class _RoutesScreenState extends State<RoutesScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Delete Route'),
-        content: Text('Are you sure you want to delete "${route.name}"?'),
+        title: const Text('Route Verwijderen'),
+        content: Text('Weet je zeker dat je "${route.name}" wilt verwijderen?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: const Text('Annuleren'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
             style: FilledButton.styleFrom(
               backgroundColor: Colors.red,
             ),
-            child: const Text('Delete'),
+            child: const Text('Verwijderen'),
           ),
         ],
       ),
@@ -436,13 +436,13 @@ class _RoutesScreenState extends State<RoutesScreen> {
         await _loadRoutes(); // Reload the routes list
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('${route.name} deleted'),
+            content: Text('${route.name} verwijderd'),
           ),
         );
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Failed to delete route: $e'),
+            content: Text('Fout bij verwijderen route: $e'),
             backgroundColor: Colors.red,
           ),
         );

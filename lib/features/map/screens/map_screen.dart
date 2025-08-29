@@ -4,6 +4,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../../../core/constants/activity_types.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/settings_service.dart';
+import '../../../core/utils/distance_formatter.dart';
 import '../../../shared/services/location_service.dart';
 import '../../../shared/services/routing_service.dart';
 import '../../../shared/services/geocoding_service.dart';
@@ -28,7 +30,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   ActivityType _selectedActivity = ActivityType.walking; // Start with walking for Phase 2 focus
   bool _isDrawingMode = false;
@@ -49,6 +51,7 @@ class _MapScreenState extends State<MapScreen> {
   void initState() {
     super.initState();
     _initializeLocation();
+    _loadSettings();
     // Test routing service when app starts
     RoutingService.testRouting();
     
@@ -59,6 +62,17 @@ class _MapScreenState extends State<MapScreen> {
         widget.onRouteLoaded?.call();
       });
     }
+  }
+
+  Future<void> _loadSettings() async {
+    await SettingsService.init();
+    final defaultActivity = SettingsService.getDefaultActivity();
+    final showWaypoints = SettingsService.getWaypointsVisible();
+    
+    setState(() {
+      _selectedActivity = defaultActivity;
+      _showWaypoints = showWaypoints;
+    });
   }
 
   @override
@@ -128,7 +142,7 @@ class _MapScreenState extends State<MapScreen> {
               // Tile layer
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.line2trail',
+                userAgentPackageName: 'com.example.pathify',
               ),
               // Route polyline (prefer snapped path)
               if (_snappedRoute.isNotEmpty)
@@ -214,7 +228,7 @@ class _MapScreenState extends State<MapScreen> {
               top: MediaQuery.of(context).padding.top + 16,
               left: 16,
               child: DrawStatsPanel(
-                distance: _formatDistance(_getTotalDistance()),
+                distance: DistanceFormatter.formatDistance(_getTotalDistance()),
                 time: _formatTime(_getEstimatedTime()),
                 isLoading: _isSnapping,
               ),
@@ -477,7 +491,7 @@ class _MapScreenState extends State<MapScreen> {
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Route "$routeName" saved successfully!'),
+          content: Text('Route "$routeName" succesvol opgeslagen!'),
           duration: const Duration(seconds: 3),
           action: SnackBarAction(
             label: 'View',
@@ -492,7 +506,7 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to save route: $e'),
+          content: Text('Fout bij opslaan route: $e'),
           backgroundColor: AppColors.errorRed,
         ),
       );
@@ -504,18 +518,83 @@ class _MapScreenState extends State<MapScreen> {
       // Try to get current location first
       final location = await LocationService.getCurrentLocation();
       
-      if (location != null) {
-        _mapController.move(location, 17.0);
+      final targetLocation = location ?? _currentLocation;
+      
+      // Get current camera state
+      final currentCenter = _mapController.camera.center;
+      final currentZoom = _mapController.camera.zoom;
+      final currentRotation = _mapController.camera.rotation;
+      
+      const targetZoom = 17.0;
+      const targetRotation = 0.0; // North-up
+      
+      // Create animation controller
+      late AnimationController animationController;
+      animationController = AnimationController(
+        duration: const Duration(milliseconds: 2000),
+        vsync: this,
+      );
+      
+      // Create animations for all properties
+      final latTween = Tween<double>(
+        begin: currentCenter.latitude,
+        end: targetLocation.latitude,
+      );
+      final lngTween = Tween<double>(
+        begin: currentCenter.longitude,
+        end: targetLocation.longitude,
+      );
+      final zoomTween = Tween<double>(
+        begin: currentZoom,
+        end: targetZoom,
+      );
+      final rotationTween = Tween<double>(
+        begin: currentRotation,
+        end: targetRotation,
+      );
+      
+      // Use eased animation curve
+      final curvedAnimation = CurvedAnimation(
+        parent: animationController,
+        curve: Curves.easeInOutCubic,
+      );
+      
+      // Listen to animation updates
+      void animationListener() {
+        if (mounted) {
+          final lat = latTween.evaluate(curvedAnimation);
+          final lng = lngTween.evaluate(curvedAnimation);
+          final zoom = zoomTween.evaluate(curvedAnimation);
+          final rotation = rotationTween.evaluate(curvedAnimation);
+          
+          _mapController.moveAndRotate(
+            LatLng(lat, lng),
+            zoom,
+            rotation,
+          );
+        }
+      }
+      
+      curvedAnimation.addListener(animationListener);
+      
+      // Start animation
+      await animationController.forward();
+      
+      // Clean up
+      curvedAnimation.removeListener(animationListener);
+      animationController.dispose();
+      
+      // Update current location if we got a fresh one
+      if (location != null && mounted) {
         setState(() {
           _currentLocation = location;
         });
-      } else {
-        // Fall back to last known location
-        _mapController.move(_currentLocation, 17.0);
       }
+      
     } catch (e) {
       debugPrint('Error centering on location: $e');
-      _mapController.move(_currentLocation, 17.0);
+      // Fallback to simple move with north-up orientation
+      _mapController.moveAndRotate(_currentLocation, 17.0, 0.0);
     }
   }
 
@@ -547,7 +626,7 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Location permission is needed for the best experience'),
+            content: Text('Locatietoestemming is nodig voor de beste ervaring'),
             duration: Duration(seconds: 3),
           ),
         );
@@ -558,7 +637,7 @@ class _MapScreenState extends State<MapScreen> {
   void _showLayerOptions() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Layer options coming soon!'),
+        content: Text('Laagopties komen binnenkort!'),
       ),
     );
   }
@@ -573,26 +652,26 @@ class _MapScreenState extends State<MapScreen> {
           children: [
             ListTile(
               leading: const Icon(Icons.download),
-              title: const Text('Offline Maps'),
-              subtitle: const Text('Download maps for offline use'),
+              title: const Text('Offline Kaarten'),
+              subtitle: const Text('Download kaarten voor offline gebruik'),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Offline maps coming soon!'),
+                    content: Text('Offline kaarten komen binnenkort!'),
                   ),
                 );
               },
             ),
             ListTile(
               leading: const Icon(Icons.import_export),
-              title: const Text('Import GPX'),
-              subtitle: const Text('Import route from GPX file'),
+              title: const Text('Importeer GPX'),
+              subtitle: const Text('Importeer route uit GPX bestand'),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('GPX import coming soon!'),
+                    content: Text('GPX import komt binnenkort!'),
                   ),
                 );
               },
@@ -600,12 +679,12 @@ class _MapScreenState extends State<MapScreen> {
             ListTile(
               leading: const Icon(Icons.help),
               title: const Text('Help & Tutorial'),
-              subtitle: const Text('Learn how to use Line2Trail'),
+              subtitle: const Text('Leer hoe je Pathify gebruikt'),
               onTap: () {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content: Text('Tutorial coming soon!'),
+                    content: Text('Tutorial komt binnenkort!'),
                   ),
                 );
               },
@@ -694,7 +773,7 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: 16),
             ListTile(
               leading: const Icon(Icons.call_split),
-              title: const Text('Split Route Here'),
+              title: const Text('Route Hier Splitsen'),
               onTap: () {
                 Navigator.pop(context);
                 _splitRouteAt(index);
@@ -702,7 +781,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
             ListTile(
               leading: const Icon(Icons.delete),
-              title: const Text('Remove Waypoint'),
+              title: const Text('Waypoint Verwijderen'),
               onTap: () {
                 Navigator.pop(context);
                 _removeWaypoint(index);
@@ -747,7 +826,7 @@ class _MapScreenState extends State<MapScreen> {
             const SizedBox(height: 16),
             ListTile(
               leading: const Icon(Icons.my_location),
-              title: const Text('Set to Current Location'),
+              title: const Text('Naar Huidige Locatie'),
               onTap: () async {
                 Navigator.pop(context);
                 final location = await LocationService.getCurrentLocation();
@@ -826,7 +905,7 @@ class _MapScreenState extends State<MapScreen> {
   void _showRouteEditingMenu() {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('More route options coming soon!'),
+        content: Text('Meer route opties komen binnenkort!'),
         duration: Duration(seconds: 2),
       ),
     );
@@ -836,7 +915,7 @@ class _MapScreenState extends State<MapScreen> {
     if ((_snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute).length < 3) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Route needs at least 3 points to split'),
+          content: Text('Route heeft minimaal 3 punten nodig om te splitsen'),
         ),
       );
       return;
@@ -848,7 +927,7 @@ class _MapScreenState extends State<MapScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tap a waypoint to split the route there'),
+        content: Text('Tik op een waypoint om de route daar te splitsen'),
         duration: Duration(seconds: 4),
       ),
     );
@@ -861,7 +940,7 @@ class _MapScreenState extends State<MapScreen> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Tap waypoints to select segment for deletion'),
+        content: Text('Tik op waypoints om segment te selecteren voor verwijdering'),
         duration: Duration(seconds: 4),
       ),
     );
@@ -881,7 +960,7 @@ class _MapScreenState extends State<MapScreen> {
     _drawingHistory.addState(_currentRoute, 'Reversed route');
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Route reversed')),
+      const SnackBar(content: Text('Route omgekeerd')),
     );
   }
 
@@ -902,7 +981,7 @@ class _MapScreenState extends State<MapScreen> {
 
     final newLength = (_snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute).length;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Route simplified: $originalLength → $newLength points')),
+      SnackBar(content: Text('Route vereenvoudigd: $originalLength → $newLength punten')),
     );
   }
 
@@ -911,7 +990,7 @@ class _MapScreenState extends State<MapScreen> {
     
     if (index <= 0 || index >= routeToSplit.length - 1) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Cannot split at endpoint')),
+        const SnackBar(content: Text('Kan niet splitsen op eindpunt')),
       );
       return;
     }
@@ -921,16 +1000,16 @@ class _MapScreenState extends State<MapScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Route Split'),
+        title: const Text('Route Gesplitst'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Route has been split into 2 segments:'),
+            Text('Route is gesplitst in 2 segmenten:'),
             const SizedBox(height: 8),
-            Text('Segment 1: ${splits[0].length} points'),
-            Text('Segment 2: ${splits[1].length} points'),
+            Text('Segment 1: ${splits[0].length} punten'),
+            Text('Segment 2: ${splits[1].length} punten'),
             const SizedBox(height: 16),
-            const Text('Which segment would you like to keep?'),
+            const Text('Welk segment wil je behouden?'),
           ],
         ),
         actions: [
@@ -939,18 +1018,18 @@ class _MapScreenState extends State<MapScreen> {
               Navigator.pop(context);
               _keepRouteSegment(splits[0]);
             },
-            child: const Text('Keep First'),
+            child: const Text('Eerste Behouden'),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(context);
               _keepRouteSegment(splits[1]);
             },
-            child: const Text('Keep Second'),
+            child: const Text('Tweede Behouden'),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+            child: const Text('Annuleren'),
           ),
         ],
       ),
@@ -976,7 +1055,7 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Kept segment with ${segment.length} points')),
+      SnackBar(content: Text('Segment met ${segment.length} punten behouden')),
     );
   }
 
@@ -1141,11 +1220,11 @@ class _MapScreenState extends State<MapScreen> {
     return showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Save Route'),
+        title: const Text('Route Opslaan'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Give your route a name:'),
+            const Text('Geef je route een naam:'),
             const SizedBox(height: 16),
             TextField(
               controller: controller,
@@ -1161,7 +1240,7 @@ class _MapScreenState extends State<MapScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
+            child: const Text('Annuleren'),
           ),
           FilledButton(
             onPressed: () {
@@ -1170,7 +1249,7 @@ class _MapScreenState extends State<MapScreen> {
                 Navigator.of(context).pop(name);
               }
             },
-            child: const Text('Save'),
+            child: const Text('Opslaan'),
           ),
         ],
       ),
@@ -1211,7 +1290,7 @@ class _MapScreenState extends State<MapScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Roundtrip Generator'),
+        title: const Text('Rondrit Generator'),
         content: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [

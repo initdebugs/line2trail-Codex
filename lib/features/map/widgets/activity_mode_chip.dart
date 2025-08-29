@@ -5,11 +5,13 @@ import '../../../core/theme/app_colors.dart';
 class ActivityModeChip extends StatelessWidget {
   final ActivityType selected;
   final ValueChanged<ActivityType> onChanged;
+  final bool disabled;
 
   const ActivityModeChip({
     super.key,
     required this.selected,
     required this.onChanged,
+    this.disabled = false,
   });
 
   @override
@@ -35,33 +37,37 @@ class ActivityModeChip extends StatelessWidget {
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: () => _showPicker(context),
+          onTap: disabled ? null : () => _showPicker(context),
           borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  selected.icon, 
-                  size: 16, 
-                  color: AppColors.trailGreen,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  selected.displayName,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+          child: Opacity(
+            opacity: disabled ? 0.5 : 1.0,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    selected.icon, 
+                    size: 16, 
+                    color: disabled ? AppColors.textSecondary : AppColors.trailGreen,
                   ),
-                ),
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded, 
-                  size: 16, 
-                  color: AppColors.textSecondary,
-                ),
-              ],
+                  const SizedBox(width: 6),
+                  Text(
+                    selected.displayName,
+                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: disabled ? AppColors.textSecondary : AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  if (!disabled)
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded, 
+                      size: 16, 
+                      color: AppColors.textSecondary,
+                    ),
+                ],
+              ),
             ),
           ),
         ),
@@ -82,7 +88,7 @@ class ActivityModeChip extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Choose Activity', style: Theme.of(context).textTheme.titleMedium),
+                Text('Kies Activiteit', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 12),
                 GridView.builder(
                   shrinkWrap: true,
@@ -163,23 +169,23 @@ class _ModeTile extends StatelessWidget {
           onTap: onTap,
           borderRadius: BorderRadius.circular(16),
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
                   icon, 
                   color: selected ? AppColors.textInverse : AppColors.trailGreen, 
-                  size: 24,
+                  size: 22,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Text(
                   label,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: selected ? AppColors.textInverse : AppColors.textPrimary, 
                     fontWeight: FontWeight.w600,
-                    fontSize: 11,
+                    fontSize: 10,
                   ),
                 ),
               ],

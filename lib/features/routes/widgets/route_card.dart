@@ -82,7 +82,7 @@ class RouteCard extends StatelessWidget {
                           children: [
                             Icon(Icons.share),
                             SizedBox(width: 8),
-                            Text('Share'),
+                            Text('Delen'),
                           ],
                         ),
                       ),
@@ -92,7 +92,7 @@ class RouteCard extends StatelessWidget {
                           children: [
                             Icon(Icons.delete, color: AppColors.errorRed),
                             SizedBox(width: 8),
-                            Text('Delete', style: TextStyle(color: AppColors.errorRed)),
+                            Text('Verwijderen', style: TextStyle(color: AppColors.errorRed)),
                           ],
                         ),
                       ),
@@ -111,13 +111,13 @@ class RouteCard extends StatelessWidget {
                     context,
                     Icons.straighten,
                     route.formattedDistance,
-                    'Distance',
+                    'Afstand',
                   ),
                   _buildStat(
                     context,
                     Icons.schedule,
                     route.formattedTime,
-                    'Duration',
+                    'Duur',
                   ),
                   _buildStat(
                     context,
