@@ -5,6 +5,8 @@ import '../../settings/screens/new_settings_screen.dart';
 import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/localization_service.dart';
+import '../../../shared/services/haptic_feedback_service.dart';
+import '../../../shared/services/route_animation_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -13,10 +15,31 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> {
+class _MainNavigationState extends State<MainNavigation> 
+    with TickerProviderStateMixin {
   int _currentIndex = 0;
   SavedRoute? _routeToLoad;
   bool _shouldRefreshRoutes = false;
+  late PageController _pageController;
+  AnimationController? _transitionController;
+  bool _isTransitioning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: _currentIndex);
+    _transitionController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    _transitionController?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,8 +50,8 @@ class _MainNavigationState extends State<MainNavigation> {
               // Mark that routes should refresh and switch to routes tab
               setState(() {
                 _shouldRefreshRoutes = true;
-                _currentIndex = 1;
               });
+              _animateToPage(1);
             },
             onRouteLoaded: () {
               // Clear the route after it's loaded
@@ -48,8 +71,8 @@ class _MainNavigationState extends State<MainNavigation> {
               // Set the route to load and switch to map tab
               setState(() {
                 _routeToLoad = route;
-                _currentIndex = 0;
               });
+              _animateToPage(0);
             },
           ),
           PlaceholderScreen(title: LocalizationService.navigationTab),
@@ -57,17 +80,23 @@ class _MainNavigationState extends State<MainNavigation> {
         ];
 
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
+      body: PageView(
+        controller: _pageController,
+        onPageChanged: (index) {
+          setState(() {
+            _currentIndex = index;
+          });
+        },
         children: screens,
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _currentIndex,
-        onTap: (index) {
-          setState(() {
-            _currentIndex = index;
-          });
+        onTap: (index) async {
+          if (!_isTransitioning) {
+            await HapticFeedbackService.selectionClick();
+            _animateToPage(index);
+          }
         },
         items: [
           BottomNavigationBarItem(
@@ -93,6 +122,34 @@ class _MainNavigationState extends State<MainNavigation> {
         ],
       ),
     );
+  }
+
+  /// Animate to a specific page with haptic feedback and smooth transition
+  Future<void> _animateToPage(int index) async {
+    if (_isTransitioning || index == _currentIndex) return;
+
+    setState(() {
+      _isTransitioning = true;
+    });
+
+    try {
+      await _pageController.animateToPage(
+        index,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeInOutCubic,
+      );
+    } catch (e) {
+      debugPrint('Page animation failed: $e');
+      // Fallback to immediate page change
+      _pageController.jumpToPage(index);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isTransitioning = false;
+          _currentIndex = index;
+        });
+      }
+    }
   }
 }
 

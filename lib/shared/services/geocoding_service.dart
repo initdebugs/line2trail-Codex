@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
 class GeocodingService {
@@ -54,7 +55,7 @@ class GeocodingService {
         }
       }
     } catch (e) {
-      print('Geocoding error: $e');
+      debugPrint('Geocoding error: $e');
     }
     
     return null;
@@ -77,5 +78,118 @@ class GeocodingService {
     final centerLng = totalLng / routePoints.length;
     
     return getCityFromCoordinates(LatLng(centerLat, centerLng));
+  }
+
+  /// Search for places using forward geocoding
+  static Future<List<SearchResult>> searchPlaces(String query, {
+    LatLng? biasLocation,
+    int limit = 5,
+  }) async {
+    if (query.trim().isEmpty) return [];
+
+    try {
+      final queryParams = {
+        'format': 'json',
+        'q': query,
+        'limit': limit.toString(),
+        'addressdetails': '1',
+        'extratags': '1',
+      };
+
+      // Add bias towards a location if provided (e.g., user's current location)
+      if (biasLocation != null) {
+        queryParams['viewbox'] = '${biasLocation.longitude - 0.1},${biasLocation.latitude + 0.1},'
+                                 '${biasLocation.longitude + 0.1},${biasLocation.latitude - 0.1}';
+        queryParams['bounded'] = '0'; // Don't restrict to viewbox, just bias
+      }
+
+      final response = await _dio.get(
+        '$_nominatimBaseUrl/search',
+        queryParameters: queryParams,
+        options: Options(
+          headers: {
+            'User-Agent': 'Pathify-App/1.0',
+          },
+          receiveTimeout: const Duration(seconds: 10),
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> results = response.data;
+        return results.map((result) => SearchResult.fromJson(result)).toList();
+      }
+    } catch (e) {
+      debugPrint('Search error: $e');
+    }
+
+    return [];
+  }
+}
+
+/// Represents a search result from geocoding
+class SearchResult {
+  final String displayName;
+  final String type;
+  final LatLng location;
+  final Map<String, dynamic> address;
+  final double importance;
+
+  SearchResult({
+    required this.displayName,
+    required this.type,
+    required this.location,
+    required this.address,
+    required this.importance,
+  });
+
+  factory SearchResult.fromJson(Map<String, dynamic> json) {
+    return SearchResult(
+      displayName: json['display_name'] ?? '',
+      type: json['type'] ?? 'unknown',
+      location: LatLng(
+        double.tryParse(json['lat']?.toString() ?? '0') ?? 0.0,
+        double.tryParse(json['lon']?.toString() ?? '0') ?? 0.0,
+      ),
+      address: json['address'] ?? {},
+      importance: double.tryParse(json['importance']?.toString() ?? '0') ?? 0.0,
+    );
+  }
+
+  /// Get a short, user-friendly title for this result
+  String get title {
+    final address = this.address;
+    final city = address['city'] ?? address['town'] ?? address['village'];
+    final road = address['road'];
+    final suburb = address['suburb'];
+    
+    if (road != null && city != null) {
+      return '$road, $city';
+    } else if (suburb != null && city != null) {
+      return '$suburb, $city';
+    } else if (city != null) {
+      return city;
+    } else {
+      return displayName.split(',').take(2).join(', ');
+    }
+  }
+
+  /// Get a subtitle with additional location context
+  String get subtitle {
+    final parts = displayName.split(', ');
+    if (parts.length > 2) {
+      return parts.skip(2).take(2).join(', ');
+    }
+    return displayName;
+  }
+
+  /// Determine if this is a city-level result
+  bool get isCity {
+    return ['city', 'town', 'village', 'municipality'].contains(type);
+  }
+
+  /// Determine if this is a street-level result
+  bool get isStreet {
+    return ['residential', 'highway', 'primary', 'secondary', 'tertiary', 'unclassified'].contains(type) ||
+           address.containsKey('road');
   }
 }

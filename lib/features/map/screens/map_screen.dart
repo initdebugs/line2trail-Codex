@@ -10,6 +10,8 @@ import '../../../core/utils/distance_formatter.dart';
 import '../../../shared/services/location_service.dart';
 import '../../../shared/services/routing_service.dart';
 import '../../../shared/services/geocoding_service.dart';
+import '../../../shared/services/haptic_feedback_service.dart';
+import '../../../shared/services/route_animation_service.dart';
 import '../../routes/models/saved_route.dart';
 import '../../routes/services/route_storage_service.dart';
 import '../widgets/waypoint_marker.dart';
@@ -18,6 +20,7 @@ import '../widgets/route_tools.dart';
 import '../widgets/map_control_rail.dart';
 import '../widgets/draw_stats_panel.dart';
 import '../widgets/km_marker.dart';
+import '../widgets/map_search_bar.dart';
 import '../models/route_drawing_state.dart';
 import '../services/route_editing_service.dart';
 
@@ -52,6 +55,12 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   MapLayerType _currentMapLayer = MapLayerType.openStreetMap;
   LatLng? _previewMarker; // Preview marker for first tap
   List<LatLng> _distanceMarkers = []; // Kilometer/mile markers along route
+  
+  // Animation controllers and state
+  AnimationController? _routeDrawingController;
+  AnimationController? _snapAnimationController;
+  List<LatLng> _animatedRoute = [];
+  bool _isAnimating = false;
 
   @override
   void initState() {
@@ -160,8 +169,20 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   'attribution': '',
                 },
               ),
-              // Route polyline (prefer snapped path)
-              if (_snappedRoute.isNotEmpty)
+              // Route polyline (prefer animated route during animation, then snapped, then current)
+              if (_animatedRoute.isNotEmpty && _isAnimating)
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: _animatedRoute,
+                      strokeWidth: 5.0,
+                      color: AppColors.activeRoute,
+                      borderColor: AppColors.textInverse,
+                      borderStrokeWidth: 1.0,
+                    ),
+                  ],
+                )
+              else if (_snappedRoute.isNotEmpty)
                 PolylineLayer(
                   polylines: [
                     Polyline(
@@ -244,17 +265,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                           ),
                         ),
                       ),
-                    // Distance markers (km/mile markers along route)
+                  ],
+                ),
+              // Distance markers (place before waypoints to be visible)
+              if (_distanceMarkers.isNotEmpty)
+                MarkerLayer(
+                  markers: [
                     ..._distanceMarkers.asMap().entries.map((entry) {
                       final index = entry.key;
                       final markerPoint = entry.value;
                       final unitsSystem = SettingsService.getUnitsSystem();
                       final isMetric = unitsSystem == 'Metric';
-                      final label = '${index + 1}${isMetric ? 'k' : 'm'}';
+                      // Calculate the actual distance for this marker
+                      final markerDistance = (index + 1) * (isMetric ? 1.0 : 1.0);
+                      final label = isMetric 
+                        ? '${markerDistance.toInt()}k'
+                        : '${markerDistance.toInt()}m';
                       return Marker(
                         point: markerPoint,
-                        width: 28,
-                        height: 28,
+                        width: 22,
+                        height: 22,
                         child: KmMarker(label: label),
                       );
                     }),
@@ -271,6 +301,19 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           ),
 
           // New overlay UI per MapRedesign.md
+          // Search bar at the top (only when map is completely clean)
+          if (!_isDrawingMode && _currentRoute.isEmpty && _snappedRoute.isEmpty)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              left: 16,
+              right: 80, // Leave space for location button (64px + 16px margin)
+              child: MapSearchBar(
+                isVisible: !_isDrawingMode && _currentRoute.isEmpty && _snappedRoute.isEmpty,
+                userLocation: _currentLocation,
+                onLocationSelected: _onSearchLocationSelected,
+              ),
+            ),
+
           // Top-right compact map rail
           Positioned(
             top: MediaQuery.of(context).padding.top + 16,
@@ -365,12 +408,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   void _onMapTap(TapPosition tapPosition, LatLng point) async {
     if (_isDrawingMode) {
+      // Provide haptic feedback for map taps
+      await HapticFeedbackService.lightImpact();
+      
       if (_currentRoute.isEmpty && _previewMarker == null) {
         // First tap: show preview marker
         setState(() {
           _previewMarker = point;
           _routingError = '';
         });
+        await HapticFeedbackService.drawingFeedback();
       } else if (_currentRoute.isEmpty && _previewMarker != null) {
         // Second tap: start actual route with preview marker as first point
         setState(() {
@@ -390,8 +437,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           'Started route with ${_currentRoute.length} points',
         );
 
-        // Snap the initial route segment
-        await _snapCurrentRoute();
+        // Provide success feedback for route start
+        await HapticFeedbackService.mediumImpact();
+        
+        // Snap the initial route segment with animation
+        await _snapLastSegmentWithAnimation();
       } else {
         // Subsequent taps: continue adding to existing route
         setState(() {
@@ -408,21 +458,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           'Added point ${_currentRoute.length}',
         );
 
-        // Always snap after 2+ points
-        await _snapCurrentRoute();
+        await HapticFeedbackService.drawingFeedback();
+        
+        // Always snap after 2+ points with animation (only last segment)
+        await _snapLastSegmentWithAnimation();
       }
     }
   }
 
-  void _toggleDrawingMode() {
+  void _toggleDrawingMode() async {
+    // Provide haptic feedback for mode toggle
+    await HapticFeedbackService.selectionClick();
+    
     setState(() {
       _isDrawingMode = !_isDrawingMode;
       if (!_isDrawingMode) {
         // Clear preview marker when exiting drawing mode
         _previewMarker = null;
         if (_currentRoute.isNotEmpty && _snappedRoute.isEmpty) {
-          // Snap to path when finishing drawing
-          _snapCurrentRoute();
+          // Snap to path when finishing drawing with animation
+          _snapCurrentRouteWithAnimation();
         }
       }
     });
@@ -479,7 +534,230 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _undoLastPoint() {
+  /// Enhanced route snapping with smooth animation
+  Future<void> _snapCurrentRouteWithAnimation() async {
+    if (_currentRoute.length < 2 || _isAnimating) return;
+
+    final originalRoute = List<LatLng>.from(_currentRoute);
+
+    setState(() {
+      _isSnapping = true;
+      _isAnimating = true;
+      _routingError = '';
+    });
+
+    try {
+      debugPrint('🎯 Starting animated route snapping with ${_currentRoute.length} points for activity: $_selectedActivity');
+      
+      // Use mixed routing for better path coverage across different infrastructure types
+      final snappedPoints = await RoutingService.snapToPathMixed(
+        points: _currentRoute,
+        primaryActivityType: _selectedActivity,
+        allowMixedModes: _allowMixedRouting,
+      );
+      
+      debugPrint('✅ Route snapping completed: ${snappedPoints.length} points returned');
+
+      if (mounted && snappedPoints.isNotEmpty) {
+        // Create and start snap animation
+        _snapAnimationController?.dispose();
+        _snapAnimationController = RouteAnimationService.createSnapAnimation(
+          vsync: this,
+          originalRoute: originalRoute,
+          snappedRoute: snappedPoints,
+          onUpdate: (animatedPoints) {
+            if (mounted) {
+              setState(() {
+                _animatedRoute = animatedPoints;
+              });
+            }
+          },
+          duration: const Duration(milliseconds: 1000),
+        );
+
+        // Start animation
+        await _snapAnimationController!.forward();
+
+        // Set final snapped route
+        if (mounted) {
+          setState(() {
+            _snappedRoute = snappedPoints;
+            _snapCache[_currentRoute.length] = List<LatLng>.of(snappedPoints);
+            _isSnapping = false;
+            _isAnimating = false;
+            _animatedRoute.clear();
+            _distanceMarkers = _generateDistanceMarkers();
+          });
+          
+          // Provide success haptic feedback
+          await HapticFeedbackService.success();
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          String errorMsg = 'Could not find paths between these points.';
+          if (e.toString().contains('connection') || e.toString().contains('timeout')) {
+            errorMsg = 'No internet connection. Using straight lines.';
+          } else if (e.toString().contains('rate limit')) {
+            errorMsg = 'Too many requests. Using offline mode.';
+          }
+          _routingError = errorMsg;
+          _isSnapping = false;
+          _isAnimating = false;
+          _animatedRoute.clear();
+        });
+        
+        // Provide error haptic feedback
+        await HapticFeedbackService.error();
+      }
+    }
+  }
+
+  /// Enhanced route snapping with animation only for the last segment
+  Future<void> _snapLastSegmentWithAnimation() async {
+    if (_currentRoute.length < 2 || _isAnimating) return;
+
+    setState(() {
+      _isSnapping = true;
+      _routingError = '';
+    });
+
+    try {
+      debugPrint('🎯 Starting last segment snapping for route with ${_currentRoute.length} points');
+      
+      // Get the last two points for snapping
+      final lastSegment = _currentRoute.length >= 2 
+          ? [_currentRoute[_currentRoute.length - 2], _currentRoute.last]
+          : _currentRoute;
+      
+      // FIRST: Do the actual snapping and wait for completion
+      final snappedSegment = await RoutingService.snapToPathMixed(
+        points: lastSegment,
+        primaryActivityType: _selectedActivity,
+        allowMixedModes: _allowMixedRouting,
+      );
+      
+      debugPrint('✅ Last segment snapping completed: ${snappedSegment.length} points returned');
+
+      if (mounted && snappedSegment.isNotEmpty) {
+        // Calculate the final snapped route
+        List<LatLng> finalSnappedRoute;
+        List<LatLng> baseRoute;
+        List<LatLng> segmentToAnimate;
+        
+        if (_snappedRoute.isNotEmpty && _currentRoute.length > 2) {
+          // Find connection point - last point of previous snapped segment
+          // should connect to first point of new segment
+          final connectionPoint = snappedSegment.first;
+          
+          // Find closest point in existing snapped route to connect to
+          double minDistance = double.infinity;
+          int connectionIndex = _snappedRoute.length - 1;
+          
+          for (int i = (_snappedRoute.length * 0.7).round(); i < _snappedRoute.length; i++) {
+            // Use Haversine formula in meters
+            final lat1Rad = _snappedRoute[i].latitude * (pi / 180);
+            final lat2Rad = connectionPoint.latitude * (pi / 180);
+            final deltaLatRad = (connectionPoint.latitude - _snappedRoute[i].latitude) * (pi / 180);
+            final deltaLngRad = (connectionPoint.longitude - _snappedRoute[i].longitude) * (pi / 180);
+            
+            final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+                cos(lat1Rad) * cos(lat2Rad) *
+                sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+            final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+            final distance = 6371000.0 * c; // Earth's radius in meters
+            
+            if (distance < minDistance) {
+              minDistance = distance;
+              connectionIndex = i;
+            }
+          }
+          
+          baseRoute = _snappedRoute.sublist(0, connectionIndex + 1);
+          segmentToAnimate = snappedSegment.skip(1).toList(); // Skip duplicate connection point
+          finalSnappedRoute = baseRoute + segmentToAnimate;
+        } else {
+          // First segment
+          baseRoute = [];
+          segmentToAnimate = snappedSegment;
+          finalSnappedRoute = snappedSegment;
+        }
+
+        // SECOND: Now animate the drawing of the snapped segment
+        setState(() {
+          _isAnimating = true;
+          _isSnapping = false; // Snapping is done, now animating
+        });
+
+        // Create and start segment drawing animation
+        _snapAnimationController?.dispose();
+        _snapAnimationController = RouteAnimationService.createRouteDrawingAnimation(
+          vsync: this,
+          route: segmentToAnimate,
+          onUpdate: (animatedPoints) {
+            if (mounted) {
+              setState(() {
+                _animatedRoute = baseRoute + animatedPoints;
+                // Update distance markers in real-time during animation
+                _distanceMarkers = _generateDistanceMarkersForRoute(_animatedRoute);
+              });
+            }
+          },
+          duration: const Duration(milliseconds: 800),
+        );
+
+        // Start animation
+        await _snapAnimationController!.forward();
+
+        // THIRD: Set final state after animation completes
+        if (mounted) {
+          setState(() {
+            _snappedRoute = finalSnappedRoute;
+            _snapCache[_currentRoute.length] = List<LatLng>.of(finalSnappedRoute);
+            _isSnapping = false;
+            _isAnimating = false;
+            _animatedRoute.clear();
+            _distanceMarkers = _generateDistanceMarkers();
+          });
+          
+          // Provide success haptic feedback
+          await HapticFeedbackService.success();
+        }
+      } else {
+        // No snapped segment received
+        if (mounted) {
+          setState(() {
+            _isSnapping = false;
+            _isAnimating = false;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          String errorMsg = 'Could not find paths between these points.';
+          if (e.toString().contains('connection') || e.toString().contains('timeout')) {
+            errorMsg = 'No internet connection. Using straight lines.';
+          } else if (e.toString().contains('rate limit')) {
+            errorMsg = 'Too many requests. Using offline mode.';
+          }
+          _routingError = errorMsg;
+          _isSnapping = false;
+          _isAnimating = false;
+          _animatedRoute.clear();
+        });
+        
+        // Provide error haptic feedback
+        await HapticFeedbackService.error();
+      }
+    }
+  }
+
+  void _undoLastPoint() async {
+    // Provide haptic feedback for undo action
+    await HapticFeedbackService.mediumImpact();
+    
     final newRoute = _drawingHistory.undo();
     setState(() {
       _currentRoute.clear();
@@ -507,7 +785,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _redoLastPoint() {
+  void _redoLastPoint() async {
+    // Provide haptic feedback for redo action
+    await HapticFeedbackService.mediumImpact();
+    
     final newRoute = _drawingHistory.redo();
     setState(() {
       _currentRoute.clear();
@@ -544,7 +825,10 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _clearRoute() {
+  void _clearRoute() async {
+    // Provide strong haptic feedback for destructive action
+    await HapticFeedbackService.heavyImpact();
+    
     setState(() {
       _currentRoute.clear();
       _snappedRoute.clear();
@@ -554,7 +838,16 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _routingError = '';
       _previewMarker = null; // Clear preview marker
       _distanceMarkers.clear(); // Clear distance markers
+      _animatedRoute.clear(); // Clear animation route
+      _isAnimating = false;
     });
+    
+    // Stop any ongoing animations
+    _routeDrawingController?.dispose();
+    _snapAnimationController?.dispose();
+    _routeDrawingController = null;
+    _snapAnimationController = null;
+    
     _drawingHistory.clear();
   }
 
@@ -566,21 +859,24 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void _loopBackToStart() async {
     if (!_canLoopBack()) return;
 
-    final startPoint = _currentRoute.first;
-    final endPoint = _currentRoute.last;
+    // Use the actual route endpoints (prefer snapped route if available)
+    final actualRoute = _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute;
+    final startPoint = actualRoute.first;
+    final endPoint = actualRoute.last;
 
-    // Determine if route is already a loop (use snapped if available)
-    final rawMeters = const Distance().as(LengthUnit.Meter, startPoint, endPoint);
-    double? snappedMeters;
-    if (_snappedRoute.isNotEmpty) {
-      snappedMeters = const Distance().as(
-        LengthUnit.Meter,
-        _snappedRoute.first,
-        _snappedRoute.last,
-      );
-    }
+    // Check if route is already a loop using Haversine formula
+    final lat1Rad = startPoint.latitude * (pi / 180);
+    final lat2Rad = endPoint.latitude * (pi / 180);
+    final deltaLatRad = (endPoint.latitude - startPoint.latitude) * (pi / 180);
+    final deltaLngRad = (endPoint.longitude - startPoint.longitude) * (pi / 180);
+    
+    final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+        cos(lat1Rad) * cos(lat2Rad) *
+        sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    final distanceMeters = 6371000.0 * c; // Earth's radius in meters
 
-    final isAlreadyLoop = rawMeters < 30 && (snappedMeters == null || snappedMeters < 30);
+    final isAlreadyLoop = distanceMeters < 30; // Within 30 meters
     if (isAlreadyLoop) {
       // Points are within ~30 meters; consider it already a loop
       ScaffoldMessenger.of(context).showSnackBar(
@@ -592,55 +888,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return;
     }
 
-    setState(() {
-      _isSnapping = true;
-      _routingError = '';
-    });
+    debugPrint('🔄 Creating loop back route from ${endPoint.latitude.toStringAsFixed(6)},${endPoint.longitude.toStringAsFixed(6)} to ${startPoint.latitude.toStringAsFixed(6)},${startPoint.longitude.toStringAsFixed(6)}');
+    debugPrint('🔄 Distance to close: ${distanceMeters.toStringAsFixed(1)}m');
 
-    try {
-      // Create a route from end point back to start point
-      final loopBackPoints = [endPoint, startPoint];
-      
-      debugPrint('🔄 Creating loop back route from ${endPoint.latitude.toStringAsFixed(4)},${endPoint.longitude.toStringAsFixed(4)} to ${startPoint.latitude.toStringAsFixed(4)},${startPoint.longitude.toStringAsFixed(4)}');
-      
-      // Use routing service to get the path back to start
-      final snappedLoopBack = await RoutingService.snapToPathMixed(
-        points: loopBackPoints,
-        primaryActivityType: _selectedActivity,
-        allowMixedModes: _allowMixedRouting,
-      );
+    // Add the end->start connection to _currentRoute to create the loop
+    _currentRoute.add(startPoint);
+    _userTapPoints.add(startPoint); // Add start point as final waypoint
 
-      if (snappedLoopBack.isNotEmpty) {
-        setState(() {
-          // Add the loop back points (excluding the first point to avoid duplication)
-          _currentRoute.addAll(snappedLoopBack.skip(1));
-          _userTapPoints.add(startPoint); // Add start point as waypoint
-          _isSnapping = false;
-        });
+    // Add to history
+    _drawingHistory.addState(
+      _currentRoute,
+      'Added loop back to start',
+    );
 
-        // Add to history
-        _drawingHistory.addState(
-          _currentRoute,
-          'Added loop back to start',
-        );
+    // Provide haptic feedback
+    await HapticFeedbackService.mediumImpact();
 
-        // Re-snap the entire route for consistency
-        await _snapCurrentRoute();
+    // Use the last segment animation to snap and animate the loop back connection
+    await _snapLastSegmentWithAnimation();
 
-        debugPrint('✅ Loop back route created successfully with ${snappedLoopBack.length} points');
-      } else {
-        setState(() {
-          _isSnapping = false;
-          _routingError = 'Kon geen route terug naar start vinden';
-        });
-      }
-    } catch (e) {
-      debugPrint('❌ Loop back route failed: $e');
-      setState(() {
-        _isSnapping = false;
-        _routingError = 'Fout bij maken van lus route: ${e.toString()}';
-      });
-    }
+    debugPrint('✅ Loop back route initiated - will be snapped and animated');
   }
 
   List<LatLng> _generateDistanceMarkers() {
@@ -654,10 +921,45 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       return markers;
     }
 
+    // Calculate total route distance first
+    double totalDistance = 0.0;
+    for (int i = 0; i < route.length - 1; i++) {
+      final currentPoint = route[i];
+      final nextPoint = route[i + 1];
+      
+      // Use Haversine formula directly since Distance() is unreliable
+      final lat1Rad = currentPoint.latitude * (pi / 180);
+      final lat2Rad = nextPoint.latitude * (pi / 180);
+      final deltaLatRad = (nextPoint.latitude - currentPoint.latitude) * (pi / 180);
+      final deltaLngRad = (nextPoint.longitude - currentPoint.longitude) * (pi / 180);
+      
+      final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+          cos(lat1Rad) * cos(lat2Rad) *
+          sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final segmentDistance = 6371.0 * c; // Earth's radius in kilometers
+      
+      if (segmentDistance > 0.000001) { // Threshold for very small distances (about 1mm)
+        totalDistance += segmentDistance;
+        debugPrint('  Distance segment ${i}->${i + 1}: ${segmentDistance.toStringAsFixed(6)}km');
+      } else {
+        debugPrint('  Skipping tiny segment ${i}->${i + 1}: ${segmentDistance.toStringAsFixed(8)}km');
+      }
+    }
+    
+    debugPrint('📐 Total route distance: ${totalDistance.toStringAsFixed(2)}km');
+
     final unitsSystem = SettingsService.getUnitsSystem();
     final isMetric = unitsSystem == 'Metric';
+    // Use full intervals - 1km or 1 mile
     final markerInterval = isMetric ? 1.0 : 1.60934; // 1 km or 1 mile in km
     debugPrint('📏 Using ${isMetric ? 'metric' : 'imperial'} units, marker interval: ${markerInterval}km');
+
+    // If route is too short, don't place any markers
+    if (totalDistance < markerInterval) {
+      debugPrint('⚠️ Route too short (${totalDistance.toStringAsFixed(2)}km) for markers (need at least ${markerInterval}km)');
+      return markers;
+    }
 
     double cumulativeDistance = 0.0;
     double nextMarkerDistance = markerInterval;
@@ -666,17 +968,31 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       final currentPoint = route[i];
       final nextPoint = route[i + 1];
 
-      final segmentDistance = const Distance().as(LengthUnit.Kilometer, currentPoint, nextPoint);
+      // Use Haversine formula directly since Distance() is unreliable
+      final lat1Rad = currentPoint.latitude * (pi / 180);
+      final lat2Rad = nextPoint.latitude * (pi / 180);
+      final deltaLatRad = (nextPoint.latitude - currentPoint.latitude) * (pi / 180);
+      final deltaLngRad = (nextPoint.longitude - currentPoint.longitude) * (pi / 180);
+      
+      final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+          cos(lat1Rad) * cos(lat2Rad) *
+          sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final segmentDistance = 6371.0 * c; // Earth's radius in kilometers
+      
+      debugPrint('  Segment ${i}->${i + 1}: ${segmentDistance.toStringAsFixed(3)}km');
+      
       if (segmentDistance <= 0) continue; // avoid division by zero
 
       final segmentStart = cumulativeDistance;
       final segmentEnd = cumulativeDistance + segmentDistance;
 
-      while (nextMarkerDistance >= segmentStart && nextMarkerDistance <= segmentEnd) {
+      while (nextMarkerDistance >= segmentStart && nextMarkerDistance <= segmentEnd && nextMarkerDistance <= totalDistance) {
         final ratio = (nextMarkerDistance - segmentStart) / segmentDistance;
         final markerLat = currentPoint.latitude + (nextPoint.latitude - currentPoint.latitude) * ratio;
         final markerLng = currentPoint.longitude + (nextPoint.longitude - currentPoint.longitude) * ratio;
         markers.add(LatLng(markerLat, markerLng));
+        debugPrint('  📍 Added marker at ${nextMarkerDistance.toStringAsFixed(2)}km: ${markerLat.toStringAsFixed(6)}, ${markerLng.toStringAsFixed(6)}');
         nextMarkerDistance += markerInterval;
       }
 
@@ -689,6 +1005,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   void _saveRoute() async {
     if (_currentRoute.isEmpty && _snappedRoute.isEmpty) return;
+
+    // Provide haptic feedback for save action
+    await HapticFeedbackService.mediumImpact();
 
     final routeToSave = _snappedRoute.isNotEmpty ? _snappedRoute : _currentRoute;
     
@@ -734,6 +1053,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         widget.onRouteSaved?.call();
       });
       
+      // Provide success haptic feedback
+      await HapticFeedbackService.routeCompleted();
+      
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -755,6 +1077,90 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           content: Text('Fout bij opslaan route: $e'),
           backgroundColor: AppColors.errorRed,
         ),
+      );
+    }
+  }
+
+  /// Handle search location selection with smooth animation
+  void _onSearchLocationSelected(LatLng location, {bool isCity = false}) async {
+    await HapticFeedbackService.mediumImpact();
+    
+    try {
+      // Get current camera state for smooth animation
+      final currentCenter = _mapController.camera.center;
+      final currentZoom = _mapController.camera.zoom;
+      final currentRotation = _mapController.camera.rotation;
+      
+      // Determine target zoom based on result type
+      final targetZoom = isCity ? 13.0 : 16.0;
+      const targetRotation = 0.0; // North-up
+      
+      // Create animation controller for smooth transition
+      late AnimationController animationController;
+      animationController = AnimationController(
+        duration: const Duration(milliseconds: 1500),
+        vsync: this,
+      );
+      
+      // Create animations for all properties
+      final latTween = Tween<double>(
+        begin: currentCenter.latitude,
+        end: location.latitude,
+      );
+      final lngTween = Tween<double>(
+        begin: currentCenter.longitude,
+        end: location.longitude,
+      );
+      final zoomTween = Tween<double>(
+        begin: currentZoom,
+        end: targetZoom,
+      );
+      final rotationTween = Tween<double>(
+        begin: currentRotation,
+        end: targetRotation,
+      );
+      
+      // Use smooth eased animation curve
+      final curvedAnimation = CurvedAnimation(
+        parent: animationController,
+        curve: Curves.easeInOutCubic,
+      );
+      
+      // Listen to animation updates
+      void animationListener() {
+        if (mounted) {
+          final lat = latTween.evaluate(curvedAnimation);
+          final lng = lngTween.evaluate(curvedAnimation);
+          final zoom = zoomTween.evaluate(curvedAnimation);
+          final rotation = rotationTween.evaluate(curvedAnimation);
+          
+          _mapController.moveAndRotate(
+            LatLng(lat, lng),
+            zoom,
+            rotation,
+          );
+        }
+      }
+      
+      curvedAnimation.addListener(animationListener);
+      
+      // Start animation
+      await animationController.forward();
+      
+      // Clean up
+      curvedAnimation.removeListener(animationListener);
+      animationController.dispose();
+      
+      // Provide success haptic feedback
+      await HapticFeedbackService.success();
+      
+    } catch (e) {
+      debugPrint('Search location animation failed: $e');
+      // Fallback to simple move
+      _mapController.moveAndRotate(
+        location,
+        isCity ? 13.0 : 16.0,
+        0.0,
       );
     }
   }
@@ -1551,8 +1957,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
-  // Public method to load a saved route
-  void loadSavedRoute(SavedRoute savedRoute) {
+  // Public method to load a saved route with animation
+  void loadSavedRoute(SavedRoute savedRoute) async {
+    // Provide haptic feedback for route loading
+    await HapticFeedbackService.selectionClick();
+    
     setState(() {
       _currentRoute = List<LatLng>.from(savedRoute.points);
       _snappedRoute.clear();
@@ -1560,23 +1969,135 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       _snapCache.clear();
       _isDrawingMode = false;
       _routingError = '';
+      _animatedRoute.clear();
+      _isAnimating = false;
     });
     _drawingHistory.clear();
     _drawingHistory.addState(_currentRoute, 'Loaded saved route');
     
-    // Center map on the route
+    // Center map on the route first
     if (savedRoute.points.isNotEmpty) {
       final bounds = LatLngBounds.fromPoints(savedRoute.points);
       _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
     }
 
-    // Recalculate markers and snap the route for consistency
+    // Start animated route drawing
+    await _animateRouteLoading(savedRoute.points);
+  }
+
+  /// Animates the loading of a saved route from start to finish
+  Future<void> _animateRouteLoading(List<LatLng> route) async {
+    if (route.length < 2) return;
+
     setState(() {
-      _distanceMarkers = _generateDistanceMarkers();
+      _isAnimating = true;
     });
-    if (_currentRoute.length >= 2) {
-      _snapCurrentRoute();
+
+    // Clear current display
+    setState(() {
+      _currentRoute.clear();
+      _snappedRoute.clear();
+      _animatedRoute.clear();
+    });
+
+    try {
+      // Create route drawing animation
+      _routeDrawingController?.dispose();
+      _routeDrawingController = RouteAnimationService.createRouteDrawingAnimation(
+        vsync: this,
+        route: route,
+        onUpdate: (animatedPoints) {
+          if (mounted) {
+            setState(() {
+              _animatedRoute = animatedPoints;
+              // Update distance markers in real-time during animation
+              _distanceMarkers = _generateDistanceMarkersForRoute(animatedPoints);
+            });
+          }
+        },
+        duration: const Duration(milliseconds: 1500),
+      );
+
+      // Start the animation
+      await _routeDrawingController!.forward();
+
+      // Animation complete - set final route state
+      if (mounted) {
+        setState(() {
+          _currentRoute = List<LatLng>.from(route);
+          _animatedRoute.clear();
+          _isAnimating = false;
+          _distanceMarkers = _generateDistanceMarkers();
+        });
+
+        // Provide completion haptic feedback
+        await HapticFeedbackService.success();
+
+        // Snap the route for consistency
+        if (_currentRoute.length >= 2) {
+          _snapCurrentRoute();
+        }
+      }
+    } catch (e) {
+      debugPrint('Route loading animation failed: $e');
+      if (mounted) {
+        setState(() {
+          _currentRoute = List<LatLng>.from(route);
+          _animatedRoute.clear();
+          _isAnimating = false;
+          _distanceMarkers = _generateDistanceMarkers();
+        });
+      }
     }
+  }
+
+  /// Generate distance markers for any route (used during animations)
+  List<LatLng> _generateDistanceMarkersForRoute(List<LatLng> route) {
+    final List<LatLng> markers = [];
+
+    if (route.length < 2) {
+      return markers;
+    }
+
+    final unitsSystem = SettingsService.getUnitsSystem();
+    final isMetric = unitsSystem == 'Metric';
+    final markerInterval = isMetric ? 1.0 : 1.60934; // 1 km or 1 mile in km
+
+    double cumulativeDistance = 0.0;
+    double nextMarkerDistance = markerInterval;
+
+    for (int i = 0; i < route.length - 1; i++) {
+      final currentPoint = route[i];
+      final nextPoint = route[i + 1];
+
+      // Use Haversine formula directly since Distance() is unreliable
+      final lat1Rad = currentPoint.latitude * (pi / 180);
+      final lat2Rad = nextPoint.latitude * (pi / 180);
+      final deltaLatRad = (nextPoint.latitude - currentPoint.latitude) * (pi / 180);
+      final deltaLngRad = (nextPoint.longitude - currentPoint.longitude) * (pi / 180);
+      
+      final a = sin(deltaLatRad / 2) * sin(deltaLatRad / 2) +
+          cos(lat1Rad) * cos(lat2Rad) *
+          sin(deltaLngRad / 2) * sin(deltaLngRad / 2);
+      final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+      final segmentDistance = 6371.0 * c; // Earth's radius in kilometers
+      if (segmentDistance <= 0) continue;
+
+      final segmentStart = cumulativeDistance;
+      final segmentEnd = cumulativeDistance + segmentDistance;
+
+      while (nextMarkerDistance >= segmentStart && nextMarkerDistance <= segmentEnd) {
+        final ratio = (nextMarkerDistance - segmentStart) / segmentDistance;
+        final markerLat = currentPoint.latitude + (nextPoint.latitude - currentPoint.latitude) * ratio;
+        final markerLng = currentPoint.longitude + (nextPoint.longitude - currentPoint.longitude) * ratio;
+        markers.add(LatLng(markerLat, markerLng));
+        nextMarkerDistance += markerInterval;
+      }
+
+      cumulativeDistance = segmentEnd;
+    }
+
+    return markers;
   }
 
   void _showRoundtripDialog() {
@@ -1614,6 +2135,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   @override
   void dispose() {
     LocationService.stopLocationTracking();
+    _routeDrawingController?.dispose();
+    _snapAnimationController?.dispose();
     super.dispose();
   }
 }
