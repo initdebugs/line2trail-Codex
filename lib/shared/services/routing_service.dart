@@ -119,16 +119,16 @@ class RoutingService {
     return await _mockSnapToPath(points, primaryType);
   }
 
-  /// Real path snapping using routing services
+  /// Real path snapping using routing services (prioritizes proper infrastructure)
   static Future<List<LatLng>> _realSnapToPath(List<LatLng> points, ActivityType activityType) async {
     debugPrint('🚀 _realSnapToPath: Trying routing for ${activityType.name} with ${points.length} points');
     
-    // Try Overpass API approach first (like your working HTML project)
+    // Prioritize Overpass API first for proper infrastructure (like normal drawing mode)
     try {
-      debugPrint('🗺️ Trying Overpass API routing (like working HTML project)...');
+      debugPrint('🗺️ Trying Overpass API (proper infrastructure)...');
       return await _overpassRouting(points, activityType);
     } catch (e) {
-      debugPrint('Overpass routing failed: $e, trying OSRM...');
+      debugPrint('Overpass failed: $e, trying OSRM...');
       try {
         return await _osrmSnap(points, activityType);
       } catch (e2) {

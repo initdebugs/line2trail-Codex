@@ -11,6 +11,8 @@ class RouteBar extends StatefulWidget {
   final VoidCallback? onSave;
   final bool hasRoute;
   final VoidCallback? onRoundtrip;
+  final bool isRoundtripMode;
+  final VoidCallback? onCancelRoundtrip;
 
   const RouteBar({
     super.key,
@@ -21,116 +23,96 @@ class RouteBar extends StatefulWidget {
     this.onSave,
     this.hasRoute = false,
     this.onRoundtrip,
+    this.isRoundtripMode = false,
+    this.onCancelRoundtrip,
   });
 
   @override
   State<RouteBar> createState() => _RouteBarState();
 }
 
-class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
-  late AnimationController _activityModeController;
-  late AnimationController _saveButtonController;
-  late AnimationController _roundtripButtonController;
-  late Animation<double> _activityModeAnimation;
-  late Animation<double> _saveButtonAnimation;
-  late Animation<double> _roundtripButtonAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _activityModeController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _saveButtonController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    _roundtripButtonController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
-    
-    _activityModeAnimation = CurvedAnimation(
-      parent: _activityModeController,
-      curve: Curves.easeInOut,
-    );
-    _saveButtonAnimation = CurvedAnimation(
-      parent: _saveButtonController,
-      curve: Curves.easeInOut,
-    );
-    _roundtripButtonAnimation = CurvedAnimation(
-      parent: _roundtripButtonController,
-      curve: Curves.easeInOut,
-    );
-
-    // Set initial animation values without animation (for first render)
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      if (!widget.isDrawing && !widget.hasRoute) {
-        _activityModeController.value = 1.0;
-        _roundtripButtonController.value = 1.0;
-        _saveButtonController.value = 0.0;
-      } else if (!widget.isDrawing && widget.hasRoute) {
-        _activityModeController.value = 1.0;
-        _roundtripButtonController.value = 0.0;
-        _saveButtonController.value = 1.0;
-      } else {
-        _activityModeController.value = 0.0;
-        _saveButtonController.value = 1.0;
-        _roundtripButtonController.value = 0.0;
-      }
-    });
-  }
-
-
-  @override
-  void didUpdateWidget(RouteBar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    
-    // Always animate when drawing state changes
-    if (widget.isDrawing != oldWidget.isDrawing) {
-      if (widget.isDrawing && !oldWidget.isDrawing) {
-        // Started drawing - animate to drawing state
-        _activityModeController.reverse();
-        _saveButtonController.forward();
-        _roundtripButtonController.reverse();
-      } else if (!widget.isDrawing && oldWidget.isDrawing) {
-        // Stopped drawing - animate to non-drawing state
-        _activityModeController.forward();
-        // Only show roundtrip if no route exists
-        if (!widget.hasRoute) {
-          _roundtripButtonController.forward();
-          _saveButtonController.reverse();
-        } else {
-          _roundtripButtonController.reverse(); // Keep hidden if route exists
-          _saveButtonController.forward();
-        }
-      }
-    } else {
-      // No state change, but check route existence for save button and roundtrip visibility
-      if (widget.hasRoute != oldWidget.hasRoute) {
-        if (widget.hasRoute && widget.onSave != null) {
-          _saveButtonController.forward();
-          _roundtripButtonController.reverse(); // Hide roundtrip when route appears
-        } else if (!widget.isDrawing) {
-          _saveButtonController.reverse();
-          _roundtripButtonController.forward(); // Show roundtrip when route is cleared
-        }
-      }
-    }
-  }
-
-  @override
-  void dispose() {
-    _activityModeController.dispose();
-    _saveButtonController.dispose();
-    _roundtripButtonController.dispose();
-    super.dispose();
-  }
+class _RouteBarState extends State<RouteBar> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.isRoundtripMode) {
+      // Roundtrip generator mode - prominent layout with animation
+      return SafeArea(
+        minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.trailGreen.withValues(alpha: 0.9),
+                AppColors.trailGreen.withValues(alpha: 0.7),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.trailGreen.withValues(alpha: 0.3),
+                blurRadius: 16,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Main instruction with icon
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.touch_app,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Selecteer Startpunt',
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
+                        ),
+                        Text(
+                          'Tik op de kaart om je rondrit te starten',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              // Action button
+              _CancelRoundtripButton(
+                onPressed: widget.onCancelRoundtrip!,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Normal mode
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Container(
@@ -148,69 +130,43 @@ class _RouteBarState extends State<RouteBar> with TickerProviderStateMixin {
             ),
           ],
         ),
-        child: AnimatedBuilder(
-          animation: Listenable.merge([_activityModeAnimation, _saveButtonAnimation, _roundtripButtonAnimation]),
-          builder: (context, child) {
-            return Row(
-              children: [
-                // Activity selector (animated)
-                if (_activityModeAnimation.value > 0.01)
-                  SizeTransition(
-                    sizeFactor: _activityModeAnimation,
-                    axis: Axis.horizontal,
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FadeTransition(
-                        opacity: _activityModeAnimation,
-                        child: ActivityModeChip(
-                          selected: widget.selectedActivity,
-                          onChanged: widget.onActivityChanged,
-                          disabled: widget.hasRoute,
-                        ),
-                      ),
-                    ),
-                  ),
-                // Draw/Stop button (primary action)
-                Expanded(
-                  child: _PrimaryActionButton(
-                    isDrawing: widget.isDrawing,
-                    onPressed: widget.onToggleDraw,
-                  ),
+        child: Row(
+          children: [
+            // Activity selector (when not drawing and no route)
+            if (!widget.isDrawing && !widget.hasRoute)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ActivityModeChip(
+                  selected: widget.selectedActivity,
+                  onChanged: widget.onActivityChanged,
+                  disabled: widget.hasRoute,
                 ),
-                // Roundtrip button (animated, only when not drawing)
-                if (_roundtripButtonAnimation.value > 0.01 && widget.onRoundtrip != null)
-                  SizeTransition(
-                    sizeFactor: _roundtripButtonAnimation,
-                    axis: Axis.horizontal,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: FadeTransition(
-                        opacity: _roundtripButtonAnimation,
-                        child: _RoundtripButton(
-                          onPressed: widget.onRoundtrip!,
-                        ),
-                      ),
-                    ),
-                  ),
-                // Save button (animated)
-                if (_saveButtonAnimation.value > 0.01)
-                  SizeTransition(
-                    sizeFactor: _saveButtonAnimation,
-                    axis: Axis.horizontal,
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 8),
-                      child: FadeTransition(
-                        opacity: _saveButtonAnimation,
-                        child: _SaveButton(
-                          onPressed: widget.onSave!,
-                          showText: _activityModeAnimation.value < 0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            );
-          },
+              ),
+            // Draw/Stop button (primary action)
+            Expanded(
+              child: _PrimaryActionButton(
+                isDrawing: widget.isDrawing,
+                onPressed: widget.onToggleDraw,
+              ),
+            ),
+            // Roundtrip button (only when not drawing and no route)
+            if (!widget.isDrawing && !widget.hasRoute && widget.onRoundtrip != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _RoundtripButton(
+                  onPressed: widget.onRoundtrip!,
+                ),
+              ),
+            // Save button (when route exists)
+            if (widget.hasRoute && widget.onSave != null)
+              Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: _SaveButton(
+                  onPressed: widget.onSave!,
+                  showText: !widget.isDrawing && !widget.hasRoute,
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -406,5 +362,56 @@ class _SaveButton extends StatelessWidget {
         ),
       );
     }
+  }
+}
+
+class _CancelRoundtripButton extends StatelessWidget {
+  final VoidCallback onPressed;
+
+  const _CancelRoundtripButton({
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.4),
+          width: 1.5,
+        ),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 16,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'Annuleer',
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

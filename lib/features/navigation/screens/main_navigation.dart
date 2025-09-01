@@ -6,7 +6,6 @@ import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/localization_service.dart';
 import '../../../shared/services/haptic_feedback_service.dart';
-import '../../../shared/services/route_animation_service.dart';
 
 class MainNavigation extends StatefulWidget {
   const MainNavigation({super.key});
@@ -15,29 +14,22 @@ class MainNavigation extends StatefulWidget {
   State<MainNavigation> createState() => _MainNavigationState();
 }
 
-class _MainNavigationState extends State<MainNavigation> 
-    with TickerProviderStateMixin {
+class _MainNavigationState extends State<MainNavigation> {
   int _currentIndex = 0;
   SavedRoute? _routeToLoad;
   bool _shouldRefreshRoutes = false;
   late PageController _pageController;
-  AnimationController? _transitionController;
   bool _isTransitioning = false;
 
   @override
   void initState() {
     super.initState();
     _pageController = PageController(initialPage: _currentIndex);
-    _transitionController = AnimationController(
-      duration: const Duration(milliseconds: 300),
-      vsync: this,
-    );
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    _transitionController?.dispose();
     super.dispose();
   }
 
@@ -124,32 +116,26 @@ class _MainNavigationState extends State<MainNavigation>
     );
   }
 
-  /// Animate to a specific page with haptic feedback and smooth transition
-  Future<void> _animateToPage(int index) async {
+  /// Navigate to a specific page
+  void _animateToPage(int index) {
     if (_isTransitioning || index == _currentIndex) return;
 
     setState(() {
       _isTransitioning = true;
     });
 
-    try {
-      await _pageController.animateToPage(
-        index,
-        duration: const Duration(milliseconds: 400),
-        curve: Curves.easeInOutCubic,
-      );
-    } catch (e) {
-      debugPrint('Page animation failed: $e');
-      // Fallback to immediate page change
-      _pageController.jumpToPage(index);
-    } finally {
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    ).then((_) {
       if (mounted) {
         setState(() {
           _isTransitioning = false;
           _currentIndex = index;
         });
       }
-    }
+    });
   }
 }
 

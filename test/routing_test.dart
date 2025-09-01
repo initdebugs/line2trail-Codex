@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:line2trail/core/constants/activity_types.dart';
-import 'package:line2trail/shared/services/routing_service.dart';
+import 'package:pathify/core/constants/activity_types.dart';
+import 'package:pathify/shared/services/routing_service.dart';
 
 void main() {
   group('Routing Service Tests', () {

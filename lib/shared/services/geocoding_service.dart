@@ -1,195 +1,133 @@
+import 'dart:convert';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:latlong2/latlong.dart';
 
+/// Service for geocoding and reverse geocoding using Nominatim (OpenStreetMap)
 class GeocodingService {
-  static const String _nominatimBaseUrl = 'https://nominatim.openstreetmap.org';
   static final _dio = Dio();
-  
-  /// Get city name from coordinates using reverse geocoding
-  static Future<String?> getCityFromCoordinates(LatLng coordinates) async {
+  static const String _baseUrl = 'https://nominatim.openstreetmap.org';
+
+  /// Search for locations by query text
+  static Future<List<LocationSearchResult>> searchLocations(String query, {LatLng? userLocation}) async {
+    if (query.trim().isEmpty) return [];
+
     try {
       final response = await _dio.get(
-        '$_nominatimBaseUrl/reverse',
+        '$_baseUrl/search',
         queryParameters: {
+          'q': query,
           'format': 'json',
-          'lat': coordinates.latitude.toString(),
-          'lon': coordinates.longitude.toString(),
-          'zoom': '10',
+          'addressdetails': '1',
+          'limit': '10',
+          'countrycodes': 'NL,BE,DE,FR', // Focus on nearby countries for better results
+          if (userLocation != null) 'lat': userLocation.latitude.toString(),
+          if (userLocation != null) 'lon': userLocation.longitude.toString(),
+        },
+        options: Options(
+          headers: {
+            'User-Agent': 'Pathify Mobile App (https://pathify.app)',
+          },
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = response.data;
+        return data.map((item) => LocationSearchResult.fromJson(item)).toList();
+      }
+    } catch (e) {
+      print('Geocoding search error: $e');
+    }
+
+    return [];
+  }
+
+  /// Get city name from coordinates
+  static Future<String?> getCityFromCoordinates(LatLng point) async {
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/reverse',
+        queryParameters: {
+          'lat': point.latitude.toString(),
+          'lon': point.longitude.toString(),
+          'format': 'json',
           'addressdetails': '1',
         },
         options: Options(
           headers: {
-            'User-Agent': 'Pathify-App/1.0',
+            'User-Agent': 'Pathify Mobile App (https://pathify.app)',
           },
         ),
       );
-      
+
       if (response.statusCode == 200) {
         final data = response.data;
         final address = data['address'] as Map<String, dynamic>?;
         
         if (address != null) {
-          // Try to get city, town, village, or suburb
-          final city = address['city'] ?? 
-                      address['town'] ?? 
-                      address['village'] ?? 
-                      address['suburb'] ?? 
-                      address['municipality'];
-                      
-          final state = address['state'];
-          final country = address['country'];
-          
-          // Format location string
-          if (city != null) {
-            if (state != null && country != null) {
-              return '$city, $state, $country';
-            } else if (state != null) {
-              return '$city, $state';
-            } else if (country != null) {
-              return '$city, $country';
-            } else {
-              return city;
-            }
-          }
+          // Try to get city, town, or village
+          return address['city'] ?? 
+                 address['town'] ?? 
+                 address['village'] ?? 
+                 address['municipality'] ??
+                 address['county'];
         }
       }
     } catch (e) {
-      debugPrint('Geocoding error: $e');
+      print('Reverse geocoding error: $e');
     }
-    
+
     return null;
-  }
-  
-  /// Get location from the center of a route
-  static Future<String?> getLocationFromRoute(List<LatLng> routePoints) async {
-    if (routePoints.isEmpty) return null;
-    
-    // Calculate the center point of the route
-    double totalLat = 0;
-    double totalLng = 0;
-    
-    for (final point in routePoints) {
-      totalLat += point.latitude;
-      totalLng += point.longitude;
-    }
-    
-    final centerLat = totalLat / routePoints.length;
-    final centerLng = totalLng / routePoints.length;
-    
-    return getCityFromCoordinates(LatLng(centerLat, centerLng));
-  }
-
-  /// Search for places using forward geocoding
-  static Future<List<SearchResult>> searchPlaces(String query, {
-    LatLng? biasLocation,
-    int limit = 5,
-  }) async {
-    if (query.trim().isEmpty) return [];
-
-    try {
-      final queryParams = {
-        'format': 'json',
-        'q': query,
-        'limit': limit.toString(),
-        'addressdetails': '1',
-        'extratags': '1',
-      };
-
-      // Add bias towards a location if provided (e.g., user's current location)
-      if (biasLocation != null) {
-        queryParams['viewbox'] = '${biasLocation.longitude - 0.1},${biasLocation.latitude + 0.1},'
-                                 '${biasLocation.longitude + 0.1},${biasLocation.latitude - 0.1}';
-        queryParams['bounded'] = '0'; // Don't restrict to viewbox, just bias
-      }
-
-      final response = await _dio.get(
-        '$_nominatimBaseUrl/search',
-        queryParameters: queryParams,
-        options: Options(
-          headers: {
-            'User-Agent': 'Pathify-App/1.0',
-          },
-          receiveTimeout: const Duration(seconds: 10),
-        ),
-      );
-
-      if (response.statusCode == 200) {
-        final List<dynamic> results = response.data;
-        return results.map((result) => SearchResult.fromJson(result)).toList();
-      }
-    } catch (e) {
-      debugPrint('Search error: $e');
-    }
-
-    return [];
   }
 }
 
-/// Represents a search result from geocoding
-class SearchResult {
+/// Represents a location search result
+class LocationSearchResult {
   final String displayName;
-  final String type;
   final LatLng location;
-  final Map<String, dynamic> address;
-  final double importance;
+  final String? city;
+  final String? country;
+  final String type;
+  final double? importance;
 
-  SearchResult({
+  LocationSearchResult({
     required this.displayName,
-    required this.type,
     required this.location,
-    required this.address,
-    required this.importance,
+    this.city,
+    this.country,
+    required this.type,
+    this.importance,
   });
 
-  factory SearchResult.fromJson(Map<String, dynamic> json) {
-    return SearchResult(
+  factory LocationSearchResult.fromJson(Map<String, dynamic> json) {
+    final address = json['address'] as Map<String, dynamic>?;
+    
+    return LocationSearchResult(
       displayName: json['display_name'] ?? '',
-      type: json['type'] ?? 'unknown',
       location: LatLng(
-        double.tryParse(json['lat']?.toString() ?? '0') ?? 0.0,
-        double.tryParse(json['lon']?.toString() ?? '0') ?? 0.0,
+        double.parse(json['lat'].toString()),
+        double.parse(json['lon'].toString()),
       ),
-      address: json['address'] ?? {},
-      importance: double.tryParse(json['importance']?.toString() ?? '0') ?? 0.0,
+      city: address?['city'] ?? address?['town'] ?? address?['village'],
+      country: address?['country'],
+      type: json['type'] ?? 'unknown',
+      importance: double.tryParse(json['importance']?.toString() ?? ''),
     );
   }
 
-  /// Get a short, user-friendly title for this result
-  String get title {
-    final address = this.address;
-    final city = address['city'] ?? address['town'] ?? address['village'];
-    final road = address['road'];
-    final suburb = address['suburb'];
-    
-    if (road != null && city != null) {
-      return '$road, $city';
-    } else if (suburb != null && city != null) {
-      return '$suburb, $city';
-    } else if (city != null) {
-      return city;
-    } else {
-      return displayName.split(',').take(2).join(', ');
+  bool get isCity => ['city', 'town', 'village', 'municipality'].contains(type);
+  
+  String get shortName {
+    if (city != null && country != null) {
+      return '$city, $country';
     }
-  }
-
-  /// Get a subtitle with additional location context
-  String get subtitle {
+    if (city != null) {
+      return city!;
+    }
+    // Shorten the display name for better UX
     final parts = displayName.split(', ');
-    if (parts.length > 2) {
-      return parts.skip(2).take(2).join(', ');
+    if (parts.length > 3) {
+      return '${parts[0]}, ${parts[1]}, ${parts.last}';
     }
     return displayName;
-  }
-
-  /// Determine if this is a city-level result
-  bool get isCity {
-    return ['city', 'town', 'village', 'municipality'].contains(type);
-  }
-
-  /// Determine if this is a street-level result
-  bool get isStreet {
-    return ['residential', 'highway', 'primary', 'secondary', 'tertiary', 'unclassified'].contains(type) ||
-           address.containsKey('road');
   }
 }
