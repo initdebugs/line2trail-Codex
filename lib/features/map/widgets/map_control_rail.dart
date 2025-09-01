@@ -3,12 +3,10 @@ import '../../../core/theme/app_colors.dart';
 
 class MapControlRail extends StatelessWidget {
   final VoidCallback onLocate;
-  final VoidCallback onLayers;
 
   const MapControlRail({
     super.key,
     required this.onLocate,
-    required this.onLayers,
   });
 
   @override
@@ -17,8 +15,7 @@ class MapControlRail extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         _SquareButton(icon: Icons.my_location, onTap: onLocate),
-        const SizedBox(height: 10),
-        _SquareButton(icon: Icons.layers, onTap: onLayers),
+        // Removed layers button - always use basic OpenStreetMap
       ],
     );
   }

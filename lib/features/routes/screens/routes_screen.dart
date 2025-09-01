@@ -354,12 +354,12 @@ class _RoutesScreenState extends State<RoutesScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   _buildStatChip(Icons.straighten, route.formattedDistance),
-                  const SizedBox(width: 8),
                   _buildStatChip(Icons.schedule, route.formattedTime),
-                  const SizedBox(width: 8),
                   _buildStatChip(Icons.calendar_today, route.formattedDate),
                 ],
               ),

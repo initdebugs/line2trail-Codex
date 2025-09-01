@@ -249,21 +249,15 @@ class RoutingService {
     // Convert points to GraphHopper coordinate format
     final pointParams = points.map((p) => 'point=${p.latitude},${p.longitude}').join('&');
     
-    // Get vehicle type for GraphHopper - use the most permissive profiles
+    // Unified vehicle selection - use similar permissive profiles for all
     String vehicle = 'foot';
-    String additional = '';
+    String additional = '&weighting=shortest&avoid=motorway'; // Same restrictions for all
     
     if (activityType == ActivityType.cycling) {
       vehicle = 'bike';
-      additional = '&weighting=shortest&avoid=motorway';
-    } else if (activityType == ActivityType.hiking) {
-      vehicle = 'hike';
-      additional = '&weighting=shortest';
-    } else {
-      // Walking - use foot with shortest weighting to prefer pedestrian paths
-      vehicle = 'foot';
-      additional = '&weighting=shortest&avoid=motorway';
+      // Same restrictions as foot - only avoid motorways
     }
+    // All other activity types use foot with same restrictions
     
     // GraphHopper public API (has rate limits but no API key required for basic usage)
     final url = 'https://graphhopper.com/api/1/route?$pointParams&vehicle=$vehicle$additional&debug=true&calc_points=true&type=json';
@@ -362,11 +356,12 @@ class RoutingService {
   static Future<List<LatLng>> _osrmSnap(List<LatLng> points, ActivityType activityType) async {
     debugPrint('Using OSRM routing service...');
     
-    // OSRM only supports driving, walking, cycling profiles
+    // Unified OSRM profiles - all foot-based activities use walking
     String profile = 'walking';
     if (activityType == ActivityType.cycling) {
       profile = 'cycling';
     }
+    // All other activities (walking, running, hiking) use same walking profile
     
     // Create coordinate string: "lon,lat;lon,lat;..."
     final coordString = points.map((p) => '${p.longitude},${p.latitude}').join(';');
@@ -450,40 +445,27 @@ class RoutingService {
   }
 
   /// Get routing profile based on activity type for OpenRouteService
+  /// All profiles now allow similar routing paths, only speed differs
   static String _getProfile(ActivityType activityType) {
     switch (activityType) {
       case ActivityType.walking:
       case ActivityType.running:
-        return 'foot-walking'; // Uses footways, sidewalks, pedestrian areas
       case ActivityType.hiking:
-        return 'foot-hiking'; // Uses trails, paths, allows more terrain
+        return 'foot-walking'; // Use same profile for all foot-based activities
       case ActivityType.cycling:
-        return 'cycling-regular'; // Uses bike lanes, bike-friendly roads
+        return 'cycling-regular'; // Keep cycling for bike infrastructure
     }
   }
 
-  /// Get enhanced routing options for each activity type - simplified approach
+  /// Get unified routing options for all activity types - all can go anywhere
   static Map<String, dynamic> _getRoutingOptions(ActivityType activityType) {
-    switch (activityType) {
-      case ActivityType.walking:
-      case ActivityType.running:
-        return {
-          'avoid_features': ['highways'], // Only avoid highways, allow everything else
-          'preference': 'shortest', // Use shortest path which tends to use pedestrian infrastructure
-        };
-        
-      case ActivityType.hiking:
-        return {
-          'avoid_features': ['highways'], // Only avoid highways
-          'preference': 'shortest', // Allow all terrain types
-        };
-        
-      case ActivityType.cycling:
-        return {
-          'avoid_features': ['highways', 'steps'], // Avoid highways and steps only
-          'preference': 'shortest', // Find shortest route which often uses bike paths
-        };
-    }
+    // Unified approach: all activity types can use any road/path
+    // Only difference is the speed/time calculation, not the routing restrictions
+    return {
+      'avoid_features': ['highways'], // Only avoid highways for safety
+      'preference': 'shortest', // Use shortest/most direct path
+      // Remove all other restrictions - allow all modes to go anywhere
+    };
   }
 
   /// Parse GeoJSON response from OpenRouteService
@@ -634,14 +616,14 @@ class RoutingService {
     return _routeThroughGraph(nodes, points);
   }
 
-  /// Get cost factor for routing (like your HTML project)
+  /// Get unified cost factor for routing - all activity types can use same paths
   static double _getCostFactor(Map<String, String> tags, ActivityType activityType) {
     final highway = tags['highway'] ?? '';
     final cycleway = tags['cycleway'] ?? '';
     final bicycle = (tags['bicycle'] ?? '').toLowerCase();
     final segregated = tags['segregated'] == 'yes';
     
-    // Block motorways and private roads
+    // Block only truly inaccessible roads
     if (['motorway', 'trunk', 'motorway_link', 'trunk_link'].contains(highway)) {
       return double.infinity;
     }
@@ -649,16 +631,10 @@ class RoutingService {
       return double.infinity;
     }
     
-    // Prefer pedestrian and cycling infrastructure
-    if (activityType == ActivityType.walking || activityType == ActivityType.running) {
-      if (['footway', 'pedestrian', 'steps', 'path'].contains(highway)) return 0.7;
-      if (highway == 'cycleway' && bicycle == 'yes') return 0.8;
-    }
-    
-    if (activityType == ActivityType.cycling) {
-      if (highway == 'cycleway' || bicycle == 'designated' || cycleway == 'track' || segregated) return 0.7;
-      if (highway == 'path' && (bicycle == 'yes' || bicycle == 'designated')) return 0.9;
-    }
+    // Unified cost calculation - all activities can use any available path
+    // Prefer pedestrian and cycling infrastructure for everyone
+    if (['footway', 'pedestrian', 'steps', 'path'].contains(highway)) return 0.7;
+    if (highway == 'cycleway' || bicycle == 'designated' || cycleway == 'track' || segregated) return 0.7;
     
     // Residential streets are good for all activities
     if (['residential', 'living_street', 'service'].contains(highway)) {
@@ -666,15 +642,15 @@ class RoutingService {
       return 1.2;
     }
     
-    // Other roads with bike infrastructure
+    // Other roads - allow all activity types to use them
     if (['tertiary', 'secondary', 'primary'].contains(highway)) {
       if (cycleway == 'lane' || bicycle == 'yes') return 1.6;
-      if (highway == 'primary') return 3.0;
-      if (highway == 'secondary') return 2.4;
-      return 1.9;
+      if (highway == 'primary') return 2.4; // Reduced penalty
+      if (highway == 'secondary') return 2.0; // Reduced penalty
+      return 1.8;
     }
     
-    return 1.6; // Default for other roads
+    return 1.6; // Default for other roads - same for all activities
   }
 
   /// Check if infrastructure is bike-friendly (like your HTML project)

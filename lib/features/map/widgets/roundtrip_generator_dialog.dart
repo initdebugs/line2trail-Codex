@@ -35,18 +35,15 @@ class _RoundtripGeneratorDialogState extends State<RoundtripGeneratorDialog> {
   Widget build(BuildContext context) {
     final unitsSystem = SettingsService.getUnitsSystem();
     final isMetric = unitsSystem == 'Metric';
-    final screenHeight = MediaQuery.of(context).size.height;
-    final maxDialogHeight = screenHeight * 0.8;
-
+    
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
       ),
       child: Container(
         padding: const EdgeInsets.all(20),
-        constraints: BoxConstraints(
+        constraints: const BoxConstraints(
           maxWidth: 400,
-          maxHeight: maxDialogHeight,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -69,187 +66,168 @@ class _RoundtripGeneratorDialogState extends State<RoundtripGeneratorDialog> {
                 ),
               ],
             ),
+            const SizedBox(height: 20),
+
+            // Activity Type Selection - Compact Row Layout
+            Row(
+              children: [
+                Text(
+                  'Activiteit:',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    children: ActivityType.values.map((activity) {
+                      final isSelected = _selectedActivity == activity;
+                      return FilterChip(
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        label: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              activity.icon,
+                              size: 14,
+                              color: isSelected ? AppColors.trailGreen : AppColors.textSecondary,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              activity.displayName,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: isSelected ? AppColors.trailGreen : AppColors.textPrimary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        selected: isSelected,
+                        onSelected: (_) => setState(() => _selectedActivity = activity),
+                        backgroundColor: AppColors.surface,
+                        selectedColor: AppColors.trailGreen.withValues(alpha: 0.2),
+                        side: BorderSide(
+                          color: isSelected ? AppColors.trailGreen : AppColors.textSecondary.withValues(alpha: 0.3),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 16),
 
-            // Scrollable content area
-            Flexible(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Activity Type Selection
-                    Text(
-                      'Activiteit Type',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+            // Route Strategy Selection - Compact Dropdown
+            Row(
+              children: [
+                Text(
+                  'Route Type:',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: AppColors.surface,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.3)),
                     ),
-                    const SizedBox(height: 8),
-                    // Horizontal activity selector
-                    SizedBox(
-                      height: 50,
-                      child: ListView.builder(
-                        scrollDirection: Axis.horizontal,
-                        itemCount: ActivityType.values.length,
-                        itemBuilder: (context, index) {
-                          final activity = ActivityType.values[index];
-                          final isSelected = _selectedActivity == activity;
-                          
-                          return Padding(
-                            padding: EdgeInsets.only(right: index < ActivityType.values.length - 1 ? 8 : 0),
-                            child: FilterChip(
-                              label: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    activity.icon,
-                                    size: 16,
-                                    color: isSelected ? AppColors.trailGreen : AppColors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    activity.displayName,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: isSelected ? AppColors.trailGreen : AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              selected: isSelected,
-                              onSelected: (_) => setState(() => _selectedActivity = activity),
-                              backgroundColor: AppColors.surface,
-                              selectedColor: AppColors.trailGreen.withValues(alpha: 0.2),
-                              checkmarkColor: AppColors.trailGreen,
-                              side: BorderSide(
-                                color: isSelected ? AppColors.trailGreen : AppColors.textSecondary.withValues(alpha: 0.3),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Route Strategy Selection
-                    Text(
-                      'Route Type',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.3)),
-                      ),
-                      child: Column(
-                        children: [
-                          for (final strategy in RoundtripStrategy.values)
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 8),
-                              child: RadioListTile<RoundtripStrategy>(
-                                value: strategy,
-                                groupValue: _selectedStrategy,
-                                onChanged: (value) {
-                                  if (value != null) {
-                                    setState(() => _selectedStrategy = value);
-                                  }
-                                },
-                                title: Text(
-                                  _getStrategyTitle(strategy),
-                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
-                                ),
-                                subtitle: Text(
-                                  _getStrategyDescription(strategy),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppColors.textSecondary,
-                                  ),
-                                ),
-                                dense: true,
-                                contentPadding: EdgeInsets.zero,
-                                activeColor: AppColors.trailGreen,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Distance Selection
-                    Text(
-                      'Gewenste Afstand',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: AppColors.surface,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.3)),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                '${_selectedDistance.toInt()} ${isMetric ? 'km' : 'mi'}',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: AppColors.trailGreen,
-                                ),
-                              ),
-                              Text(
-                                '~${_getEstimatedTime()}',
-                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                            ],
+                    child: DropdownButton<RoundtripStrategy>(
+                      value: _selectedStrategy,
+                      isExpanded: true,
+                      underline: const SizedBox(),
+                      items: RoundtripStrategy.values.map((strategy) {
+                        return DropdownMenuItem(
+                          value: strategy,
+                          child: Text(
+                            _getStrategyTitle(strategy),
+                            style: const TextStyle(fontSize: 14),
                           ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: _distanceOptions.map((distance) {
-                              final displayDistance = isMetric ? distance : distance * 0.621371;
-                              final isSelected = _selectedDistance == distance;
-                              
-                              return FilterChip(
-                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                label: Text(
-                                  '${displayDistance.toInt()}${isMetric ? 'k' : 'm'}',
-                                  style: const TextStyle(fontSize: 12),
-                                ),
-                                selected: isSelected,
-                                onSelected: (_) => setState(() => _selectedDistance = distance),
-                                backgroundColor: AppColors.surface,
-                                selectedColor: AppColors.trailGreen.withValues(alpha: 0.2),
-                                checkmarkColor: AppColors.trailGreen,
-                                labelStyle: TextStyle(
-                                  color: isSelected ? AppColors.trailGreen : AppColors.textPrimary,
-                                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-                                ),
-                                side: BorderSide(
-                                  color: isSelected ? AppColors.trailGreen : AppColors.textSecondary.withValues(alpha: 0.3),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                      ),
+                        );
+                      }).toList(),
+                      onChanged: (value) {
+                        if (value != null) {
+                          setState(() => _selectedStrategy = value);
+                        }
+                      },
                     ),
-                  ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // Show description for selected strategy
+            Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: Text(
+                _getStrategyDescription(_selectedStrategy),
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
+            ),
+            const SizedBox(height: 16),
+
+            // Distance Selection - Compact Layout
+            Row(
+              children: [
+                Text(
+                  'Afstand:',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${_selectedDistance.toInt()} ${isMetric ? 'km' : 'mi'}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.trailGreen,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '~${_getEstimatedTime()}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: _distanceOptions.map((distance) {
+                final displayDistance = isMetric ? distance : distance * 0.621371;
+                final isSelected = _selectedDistance == distance;
+                
+                return FilterChip(
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  label: Text(
+                    '${displayDistance.toInt()}${isMetric ? 'k' : 'm'}',
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                  selected: isSelected,
+                  onSelected: (_) => setState(() => _selectedDistance = distance),
+                  backgroundColor: AppColors.surface,
+                  selectedColor: AppColors.trailGreen.withValues(alpha: 0.2),
+                  labelStyle: TextStyle(
+                    color: isSelected ? AppColors.trailGreen : AppColors.textPrimary,
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                  side: BorderSide(
+                    color: isSelected ? AppColors.trailGreen : AppColors.textSecondary.withValues(alpha: 0.3),
+                  ),
+                );
+              }).toList(),
             ),
             const SizedBox(height: 20),
 

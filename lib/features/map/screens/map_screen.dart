@@ -37,7 +37,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   final MapController _mapController = MapController();
   ActivityType _selectedActivity = ActivityType.walking; // Start with walking for Phase 2 focus
   bool _isDrawingMode = false;
@@ -54,7 +54,7 @@ class _MapScreenState extends State<MapScreen> {
   String _routingError = '';
   bool _showWaypoints = true;
   bool _allowMixedRouting = true; // Allow combining different transport modes
-  MapLayerType _currentMapLayer = MapLayerType.openStreetMap;
+  final MapLayerType _currentMapLayer = MapLayerType.openStreetMap; // Always use OpenStreetMap
   LatLng? _previewMarker; // Preview marker for first tap
   List<LatLng> _distanceMarkers = []; // Kilometer/mile markers along route
   
@@ -90,13 +90,12 @@ class _MapScreenState extends State<MapScreen> {
     await SettingsService.init();
     final defaultActivity = SettingsService.getDefaultActivity();
     final showWaypoints = SettingsService.getWaypointsVisible();
-    final mapLayerName = SettingsService.getMapLayer();
-    final mapLayer = MapLayerHelper.fromString(mapLayerName);
+    // Always use OpenStreetMap - removed layer selection
     
     setState(() {
       _selectedActivity = defaultActivity;
       _showWaypoints = showWaypoints;
-      _currentMapLayer = mapLayer;
+      // _currentMapLayer is now final and always OpenStreetMap
     });
   }
 
@@ -399,7 +398,6 @@ class _MapScreenState extends State<MapScreen> {
             right: 16,
             child: MapControlRail(
               onLocate: _centerOnLocation,
-              onLayers: _showLayerOptions,
             ),
           ),
 
@@ -956,8 +954,8 @@ class _MapScreenState extends State<MapScreen> {
       
       final targetLocation = location ?? _currentLocation;
       
-      // Simple move with north-up orientation
-      _mapController.moveAndRotate(targetLocation, 17.0, 0.0);
+      // Smooth animated move with north-up orientation
+      await _animateToLocation(targetLocation, 17.0, const Duration(milliseconds: 800));
       
       // Update current location if we got a fresh one
       if (location != null && mounted) {
@@ -968,8 +966,69 @@ class _MapScreenState extends State<MapScreen> {
       
     } catch (e) {
       debugPrint('Error centering on location: $e');
-      // Fallback to simple move with north-up orientation
-      _mapController.moveAndRotate(_currentLocation, 17.0, 0.0);
+      // Fallback to smooth animated move with north-up orientation
+      await _animateToLocation(_currentLocation, 17.0, const Duration(milliseconds: 800));
+    }
+  }
+
+  /// Custom smooth animation to a location using Flutter's AnimationController
+  Future<void> _animateToLocation(LatLng targetLocation, double targetZoom, Duration duration) async {
+    if (!mounted) return;
+    
+    // Get current camera position
+    final currentCamera = _mapController.camera;
+    final currentCenter = currentCamera.center;
+    final currentZoom = currentCamera.zoom;
+    
+    // Create animation controller
+    late AnimationController animationController;
+    animationController = AnimationController(
+      duration: duration,
+      vsync: this,
+    );
+    
+    // Create animations for lat, lng, and zoom
+    final latAnimation = Tween<double>(
+      begin: currentCenter.latitude,
+      end: targetLocation.latitude,
+    ).animate(CurvedAnimation(
+      parent: animationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    final lngAnimation = Tween<double>(
+      begin: currentCenter.longitude,
+      end: targetLocation.longitude,
+    ).animate(CurvedAnimation(
+      parent: animationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    final zoomAnimation = Tween<double>(
+      begin: currentZoom,
+      end: targetZoom,
+    ).animate(CurvedAnimation(
+      parent: animationController,
+      curve: Curves.easeInOut,
+    ));
+    
+    // Animation listener
+    void animationListener() {
+      if (mounted) {
+        _mapController.move(
+          LatLng(latAnimation.value, lngAnimation.value),
+          zoomAnimation.value,
+        );
+      }
+    }
+    
+    animationController.addListener(animationListener);
+    
+    try {
+      await animationController.forward();
+    } finally {
+      animationController.removeListener(animationListener);
+      animationController.dispose();
     }
   }
 
@@ -1009,52 +1068,7 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  void _showLayerOptions() {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Kaartlaag Kiezen',
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 20),
-            ...MapLayerType.values.map((layer) => ListTile(
-              leading: Icon(
-                Icons.map,
-                color: _currentMapLayer == layer ? AppColors.trailGreen : AppColors.textSecondary,
-              ),
-              title: Text(layer.displayName),
-              subtitle: Text(layer.attribution),
-              trailing: _currentMapLayer == layer 
-                ? const Icon(Icons.check, color: AppColors.trailGreen) 
-                : null,
-              onTap: () async {
-                await SettingsService.setMapLayer(layer.displayName);
-                setState(() {
-                  _currentMapLayer = layer;
-                });
-                Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Kaartlaag gewijzigd naar ${layer.displayName}')),
-                );
-              },
-            )),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
-    );
-  }
+  // Removed layer options - always use basic OpenStreetMap
 
   void _showMenuBottomSheet() {
     showModalBottomSheet(
@@ -1684,10 +1698,30 @@ class _MapScreenState extends State<MapScreen> {
     _drawingHistory.clear();
     _drawingHistory.addState(_currentRoute, 'Loaded saved route');
     
-    // Center map on the route and update distance markers
+    // Center map on the route with smooth animation and update distance markers
     if (savedRoute.points.isNotEmpty) {
+      debugPrint('📍 Loading saved route: ${savedRoute.name} with ${savedRoute.points.length} points');
+      
+      // Calculate center point of the route for smooth animation
       final bounds = LatLngBounds.fromPoints(savedRoute.points);
-      _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+      final center = LatLng(
+        (bounds.north + bounds.south) / 2,
+        (bounds.east + bounds.west) / 2,
+      );
+      
+      // Estimate appropriate zoom level based on route bounds
+      final latDiff = (bounds.north - bounds.south).abs();
+      final lngDiff = (bounds.east - bounds.west).abs();
+      final maxDiff = latDiff > lngDiff ? latDiff : lngDiff;
+      
+      double targetZoom = 15.0; // Default zoom
+      if (maxDiff > 0.1) targetZoom = 10.0;      // Large route
+      else if (maxDiff > 0.05) targetZoom = 12.0; // Medium route  
+      else if (maxDiff > 0.01) targetZoom = 14.0; // Small route
+      else targetZoom = 16.0;                      // Very small route
+      
+      // Animate to the route center with appropriate zoom
+      await _animateToLocation(center, targetZoom, const Duration(milliseconds: 1200));
       
       setState(() {
         _distanceMarkers = _generateDistanceMarkers();
@@ -1795,10 +1829,26 @@ class _MapScreenState extends State<MapScreen> {
         _drawingHistory.clear();
         _drawingHistory.addState(_currentRoute, 'Generated roundtrip route');
 
-        // Fit map to route
+        // Smoothly animate to fit the route
         if (_currentRoute.isNotEmpty) {
           final bounds = LatLngBounds.fromPoints(_currentRoute);
-          _mapController.fitCamera(CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(50)));
+          final center = LatLng(
+            (bounds.north + bounds.south) / 2,
+            (bounds.east + bounds.west) / 2,
+          );
+          
+          // Estimate appropriate zoom level
+          final latDiff = (bounds.north - bounds.south).abs();
+          final lngDiff = (bounds.east - bounds.west).abs();
+          final maxDiff = latDiff > lngDiff ? latDiff : lngDiff;
+          
+          double targetZoom = 15.0;
+          if (maxDiff > 0.1) targetZoom = 10.0;
+          else if (maxDiff > 0.05) targetZoom = 12.0;
+          else if (maxDiff > 0.01) targetZoom = 14.0;
+          else targetZoom = 16.0;
+          
+          await _animateToLocation(center, targetZoom, const Duration(milliseconds: 1000));
         }
       }
     } catch (e) {
@@ -1922,9 +1972,9 @@ class _MapScreenState extends State<MapScreen> {
   void _onSearchLocationSelected(LatLng location, {bool isCity = false}) async {
     await HapticFeedbackService.mediumImpact();
     
-    // Move map to the selected location with appropriate zoom
+    // Smooth animated move to the selected location with appropriate zoom
     final targetZoom = isCity ? 13.0 : 16.0;
-    _mapController.moveAndRotate(location, targetZoom, 0.0);
+    await _animateToLocation(location, targetZoom, const Duration(milliseconds: 1000));
   }
 
   /// Get approximate location name for route saving
