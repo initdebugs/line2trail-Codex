@@ -1,16 +1,19 @@
 # line2trail
 
-A new Flutter project.
+Path planning and route management in Flutter, organized feature-first.
 
-## Getting Started
+## Build & Dev
+- Install deps: `flutter pub get`
+- Analyze: `flutter analyze`
+- Format: `dart format lib test`
+- Run app: `flutter run`
+- Tests: `flutter test -r expanded`
 
-This project is a starting point for a Flutter application.
+## Project Structure
+- `lib/`: core, features, and shared modules (feature-first).
+- `test/`: mirrors `lib/` paths (`*_test.dart`).
+- `android/`: platform config and builds.
 
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## Roadmap
+- The short-term plan focuses on a new Route Details screen: small map preview, key stats, path type breakdown (footpath/cycle/road), and elevation profile.
+- See `docs/ROADMAP.md` for the full, actionable spec integrating `next_steps.md`.

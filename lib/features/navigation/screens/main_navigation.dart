@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../map/screens/map_screen.dart';
 import '../../routes/screens/routes_screen.dart';
-import '../../settings/screens/new_settings_screen.dart';
+import '../../settings/screens/settings_screen.dart';
 import '../../routes/models/saved_route.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/services/localization_service.dart';
@@ -66,9 +66,13 @@ class _MainNavigationState extends State<MainNavigation> {
               });
               _animateToPage(0);
             },
+            onSwitchToMap: () {
+              // Switch to map tab - route should already be loaded
+              _animateToPage(0);
+            },
           ),
           PlaceholderScreen(title: LocalizationService.navigationTab),
-          const NewSettingsScreen(),
+          const SettingsScreen(),
         ];
 
     return Scaffold(
@@ -81,37 +85,54 @@ class _MainNavigationState extends State<MainNavigation> {
         },
         children: screens,
       ),
-      bottomNavigationBar: BottomNavigationBar(
-        type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
-        onTap: (index) async {
-          if (!_isTransitioning) {
-            await HapticFeedbackService.selectionClick();
-            _animateToPage(index);
-          }
-        },
-        items: [
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.map_outlined),
-            activeIcon: const Icon(Icons.map),
-            label: LocalizationService.mapTab,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.route_outlined),
-            activeIcon: const Icon(Icons.route),
-            label: LocalizationService.routesTab,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.navigation_outlined),
-            activeIcon: const Icon(Icons.navigation),
-            label: LocalizationService.navigationTab,
-          ),
-          BottomNavigationBarItem(
-            icon: const Icon(Icons.settings_outlined),
-            activeIcon: const Icon(Icons.settings),
-            label: LocalizationService.settingsTab,
-          ),
-        ],
+      bottomNavigationBar: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.1),
+              blurRadius: 8,
+              offset: const Offset(0, -2),
+            ),
+          ],
+        ),
+        child: BottomNavigationBar(
+          type: BottomNavigationBarType.fixed,
+          currentIndex: _currentIndex,
+          backgroundColor: Colors.transparent,
+          selectedItemColor: AppColors.trailGreen,
+          unselectedItemColor: AppColors.textSecondary,
+          elevation: 0,
+          onTap: (index) async {
+            if (!_isTransitioning) {
+              await HapticFeedbackService.selectionClick();
+              _animateToPage(index);
+            }
+          },
+          items: [
+            BottomNavigationBarItem(
+              icon: _buildAnimatedIcon(Icons.map_outlined, 0),
+              activeIcon: _buildAnimatedIcon(Icons.map, 0, isActive: true),
+              label: LocalizationService.mapTab,
+            ),
+            BottomNavigationBarItem(
+              icon: _buildAnimatedIcon(Icons.route_outlined, 1),
+              activeIcon: _buildAnimatedIcon(Icons.route, 1, isActive: true),
+              label: LocalizationService.routesTab,
+            ),
+            BottomNavigationBarItem(
+              icon: _buildAnimatedIcon(Icons.navigation_outlined, 2),
+              activeIcon: _buildAnimatedIcon(Icons.navigation, 2, isActive: true),
+              label: LocalizationService.navigationTab,
+            ),
+            BottomNavigationBarItem(
+              icon: _buildAnimatedIcon(Icons.settings_outlined, 3),
+              activeIcon: _buildAnimatedIcon(Icons.settings, 3, isActive: true),
+              label: LocalizationService.settingsTab,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -126,8 +147,8 @@ class _MainNavigationState extends State<MainNavigation> {
 
     _pageController.animateToPage(
       index,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOutCubic,
     ).then((_) {
       if (mounted) {
         setState(() {
@@ -136,6 +157,28 @@ class _MainNavigationState extends State<MainNavigation> {
         });
       }
     });
+  }
+  
+  /// Build animated navigation icon
+  Widget _buildAnimatedIcon(IconData icon, int index, {bool isActive = false}) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+      child: TweenAnimationBuilder<double>(
+        duration: const Duration(milliseconds: 300),
+        tween: Tween(begin: isActive ? 1.0 : 0.8, end: isActive ? 1.2 : 1.0),
+        curve: Curves.elasticOut,
+        builder: (context, scale, child) {
+          return Transform.scale(
+            scale: scale,
+            child: Icon(
+              icon,
+              color: isActive ? AppColors.trailGreen : AppColors.textSecondary,
+            ),
+          );
+        },
+      ),
+    );
   }
 }
 

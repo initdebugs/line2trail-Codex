@@ -112,10 +112,12 @@ class _RouteBarState extends State<RouteBar> {
       );
     }
 
-    // Normal mode
+    // Normal mode with animation
     return SafeArea(
       minimum: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Theme.of(context).brightness == Brightness.dark

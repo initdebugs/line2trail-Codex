@@ -37,7 +37,7 @@ class MapScreen extends StatefulWidget {
   State<MapScreen> createState() => _MapScreenState();
 }
 
-class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
+class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   final MapController _mapController = MapController();
   ActivityType _selectedActivity = ActivityType.walking; // Start with walking for Phase 2 focus
   bool _isDrawingMode = false;
@@ -65,10 +65,41 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   RoundtripStrategy? _roundtripStrategy;
   bool _isGeneratingRoute = false;
   
+  // Animation controllers for smooth interactions
+  late AnimationController _routeClearController;
+  late Animation<double> _routeClearAnimation;
+  late AnimationController _modeTransitionController;
+  late Animation<double> _modeTransitionAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animation controllers
+    _routeClearController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _routeClearAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(
+      parent: _routeClearController,
+      curve: Curves.easeInOut,
+    ));
+    
+    _modeTransitionController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _modeTransitionAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _modeTransitionController,
+      curve: Curves.easeOutCubic,
+    ));
+    
     _initializeLocation();
     _loadSettings();
     // Test routing service when app starts
@@ -128,8 +159,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           _locationLoading = false;
         });
 
-        // Move map to the location
-        _mapController.move(location, 15.0);
+        // Move map to the location facing north
+        _mapController.moveAndRotate(location, 15.0, 0.0);
       }
     } catch (e) {
       debugPrint('Error initializing location: $e');
@@ -141,8 +172,54 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     }
   }
 
+  /// Center map on user's current location and face north
+  Future<void> _centerOnLocation() async {
+    await HapticFeedbackService.selectionClick();
+    
+    try {
+      if (_hasLocationPermission) {
+        final location = await LocationService.getCurrentLocation();
+        if (location != null) {
+          setState(() {
+            _currentLocation = location;
+          });
+          
+          // Smoothly animate to location facing north
+          _animateToLocation(location, 16.0, 0.0);
+        }
+      } else {
+        // Request permission and try again
+        final granted = await LocationService.requestLocationPermission();
+        if (granted) {
+          _hasLocationPermission = true;
+          await _centerOnLocation();
+        }
+      }
+    } catch (e) {
+      debugPrint('Error centering on location: $e');
+    }
+  }
+
+  /// Smooth animation to a location with optional rotation
+  void _animateToLocation(LatLng target, double zoom, double rotation) {
+    _mapController.moveAndRotate(target, zoom, rotation);
+  }
+
+  /// Handle search location selection and face north
+  void _onSearchLocationSelected(LatLng location, {bool isCity = false}) async {
+    await HapticFeedbackService.selectionClick();
+    
+    // Animate to the selected location facing north
+    final zoom = isCity ? 12.0 : 16.0; // Cities get wider view
+    _animateToLocation(location, zoom, 0.0); // Face north (0 degrees rotation)
+  }
+
+  @override
+  bool get wantKeepAlive => true;
+
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     return Scaffold(
       body: Stack(
         children: [
@@ -172,29 +249,37 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
                   'attribution': '',
                 },
               ),
-              // Route polyline (prefer snapped, then current)
-              if (_snappedRoute.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _snappedRoute,
-                      strokeWidth: 5.0,
-                      color: AppColors.activeRoute,
-                      borderColor: AppColors.textInverse,
-                      borderStrokeWidth: 1.0,
-                    ),
-                  ],
-                )
-              else if (_currentRoute.isNotEmpty)
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: _currentRoute,
-                      strokeWidth: 4.0,
-                      color: _isDrawingMode ? AppColors.drawingRoute : AppColors.activeRoute,
-                    ),
-                  ],
-                ),
+              // Route polylines with clear animation
+              AnimatedBuilder(
+                animation: _routeClearAnimation,
+                builder: (context, child) {
+                  if (_snappedRoute.isNotEmpty) {
+                    return PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: _snappedRoute,
+                          strokeWidth: 5.0 * _routeClearAnimation.value,
+                          color: AppColors.activeRoute.withOpacity(_routeClearAnimation.value),
+                          borderColor: AppColors.textInverse.withOpacity(_routeClearAnimation.value),
+                          borderStrokeWidth: 1.0 * _routeClearAnimation.value,
+                        ),
+                      ],
+                    );
+                  } else if (_currentRoute.isNotEmpty) {
+                    return PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          points: _currentRoute,
+                          strokeWidth: 4.0 * _routeClearAnimation.value,
+                          color: (_isDrawingMode ? AppColors.drawingRoute : AppColors.activeRoute)
+                              .withOpacity(_routeClearAnimation.value),
+                        ),
+                      ],
+                    );
+                  }
+                  return const SizedBox.shrink();
+                },
+              ),
               // Location marker (placeholder)
               // User location marker
               if (!_locationLoading)
@@ -377,17 +462,28 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
           ],
 
-          // Search bar at the top (only when map is clean and not in special modes)
-          if (!_isDrawingMode && !_isRoundtripMode && _currentRoute.isEmpty && _snappedRoute.isEmpty)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              right: 80, // Leave space for location button (64px + 16px margin)
-              child: MapSearchBar(
-                isVisible: !_isDrawingMode && !_isRoundtripMode && _currentRoute.isEmpty && _snappedRoute.isEmpty,
-                userLocation: _currentLocation,
-                onLocationSelected: _onSearchLocationSelected,
-              ),
+          // Search bar at the top with smooth transitions
+          AnimatedBuilder(
+              animation: _modeTransitionAnimation,
+              builder: (context, child) {
+                final isVisible = !_isDrawingMode && !_isRoundtripMode && _currentRoute.isEmpty && _snappedRoute.isEmpty;
+                return AnimatedPositioned(
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOutCubic,
+                  top: MediaQuery.of(context).padding.top + 16 + (isVisible ? 0 : -60),
+                  left: 16,
+                  right: 80, // Leave space for location button (64px + 16px margin)
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 300),
+                    opacity: isVisible ? 1.0 : 0.0,
+                    child: MapSearchBar(
+                      isVisible: isVisible,
+                      userLocation: _currentLocation,
+                      onLocationSelected: _onSearchLocationSelected,
+                    ),
+                  ),
+                );
+              },
             ),
 
           // New overlay UI per MapRedesign.md
@@ -401,17 +497,28 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
             ),
           ),
 
-          // Top-left draw stats when drawing/route exists
-          if (_isDrawingMode || _currentRoute.isNotEmpty || _snappedRoute.isNotEmpty)
-            Positioned(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 16,
-              child: DrawStatsPanel(
-                distance: DistanceFormatter.formatDistance(_getTotalDistance()),
-                time: _formatTime(_getEstimatedTime()),
-                isLoading: _isSnapping,
-              ),
-            ),
+          // Top-left draw stats when drawing/route exists with smooth transitions
+          AnimatedBuilder(
+            animation: _modeTransitionAnimation,
+            builder: (context, child) {
+              final isVisible = _isDrawingMode || _currentRoute.isNotEmpty || _snappedRoute.isNotEmpty;
+              return AnimatedPositioned(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutCubic,
+                top: MediaQuery.of(context).padding.top + 16 + (isVisible ? 0 : -60),
+                left: 16,
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 300),
+                  opacity: isVisible ? 1.0 : 0.0,
+                  child: DrawStatsPanel(
+                    distance: DistanceFormatter.formatDistance(_getTotalDistance()),
+                    time: _formatTime(_getEstimatedTime()),
+                    isLoading: _isSnapping,
+                  ),
+                ),
+              );
+            },
+          ),
           if (_routingError.isNotEmpty)
             Positioned(
               top: MediaQuery.of(context).padding.top + 64,
@@ -561,6 +668,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   void _toggleDrawingMode() async {
     // Provide haptic feedback for mode toggle
     await HapticFeedbackService.selectionClick();
+    
     setState(() {
       _isDrawingMode = !_isDrawingMode;
       if (!_isDrawingMode) {
@@ -572,6 +680,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
         }
       }
     });
+    
+    // Animate the mode transition
+    if (_isDrawingMode) {
+      _modeTransitionController.forward();
+    } else {
+      _modeTransitionController.reverse();
+    }
   }
 
   Future<void> _snapCurrentRoute() async {
@@ -947,90 +1062,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
   }
 
 
-  void _centerOnLocation() async {
-    try {
-      // Try to get current location first
-      final location = await LocationService.getCurrentLocation();
-      
-      final targetLocation = location ?? _currentLocation;
-      
-      // Smooth animated move with north-up orientation
-      await _animateToLocation(targetLocation, 17.0, const Duration(milliseconds: 800));
-      
-      // Update current location if we got a fresh one
-      if (location != null && mounted) {
-        setState(() {
-          _currentLocation = location;
-        });
-      }
-      
-    } catch (e) {
-      debugPrint('Error centering on location: $e');
-      // Fallback to smooth animated move with north-up orientation
-      await _animateToLocation(_currentLocation, 17.0, const Duration(milliseconds: 800));
-    }
-  }
 
-  /// Custom smooth animation to a location using Flutter's AnimationController
-  Future<void> _animateToLocation(LatLng targetLocation, double targetZoom, Duration duration) async {
-    if (!mounted) return;
-    
-    // Get current camera position
-    final currentCamera = _mapController.camera;
-    final currentCenter = currentCamera.center;
-    final currentZoom = currentCamera.zoom;
-    
-    // Create animation controller
-    late AnimationController animationController;
-    animationController = AnimationController(
-      duration: duration,
-      vsync: this,
-    );
-    
-    // Create animations for lat, lng, and zoom
-    final latAnimation = Tween<double>(
-      begin: currentCenter.latitude,
-      end: targetLocation.latitude,
-    ).animate(CurvedAnimation(
-      parent: animationController,
-      curve: Curves.easeInOut,
-    ));
-    
-    final lngAnimation = Tween<double>(
-      begin: currentCenter.longitude,
-      end: targetLocation.longitude,
-    ).animate(CurvedAnimation(
-      parent: animationController,
-      curve: Curves.easeInOut,
-    ));
-    
-    final zoomAnimation = Tween<double>(
-      begin: currentZoom,
-      end: targetZoom,
-    ).animate(CurvedAnimation(
-      parent: animationController,
-      curve: Curves.easeInOut,
-    ));
-    
-    // Animation listener
-    void animationListener() {
-      if (mounted) {
-        _mapController.move(
-          LatLng(latAnimation.value, lngAnimation.value),
-          zoomAnimation.value,
-        );
-      }
-    }
-    
-    animationController.addListener(animationListener);
-    
-    try {
-      await animationController.forward();
-    } finally {
-      animationController.removeListener(animationListener);
-      animationController.dispose();
-    }
-  }
 
   Future<void> _requestLocationPermission() async {
     final granted = await LocationService.requestLocationPermission();
@@ -1720,8 +1752,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
       else if (maxDiff > 0.01) targetZoom = 14.0; // Small route
       else targetZoom = 16.0;                      // Very small route
       
-      // Animate to the route center with appropriate zoom
-      await _animateToLocation(center, targetZoom, const Duration(milliseconds: 1200));
+      // Animate to the route center with appropriate zoom and face north
+      _animateToLocation(center, targetZoom, 0.0);
       
       setState(() {
         _distanceMarkers = _generateDistanceMarkers();
@@ -1732,11 +1764,29 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
 
 
-  /// Show roundtrip generator dialog
+  /// Show roundtrip generator dialog with animation
   Future<void> _showRoundtripDialog() async {
-    final result = await showDialog<Map<String, dynamic>>(
+    final result = await showGeneralDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) => const RoundtripGeneratorDialog(),
+      barrierDismissible: true,
+      barrierLabel: 'Roundtrip Generator',
+      transitionDuration: const Duration(milliseconds: 400),
+      pageBuilder: (context, animation, secondaryAnimation) => const RoundtripGeneratorDialog(),
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0.0, 1.0),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+          )),
+          child: FadeTransition(
+            opacity: animation,
+            child: child,
+          ),
+        );
+      },
     );
 
     if (result != null && mounted) {
@@ -1848,7 +1898,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
           else if (maxDiff > 0.01) targetZoom = 14.0;
           else targetZoom = 16.0;
           
-          await _animateToLocation(center, targetZoom, const Duration(milliseconds: 1000));
+          _animateToLocation(center, targetZoom, 0.0);
         }
       }
     } catch (e) {
@@ -1968,14 +2018,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
     return route;
   }
 
-  /// Handle search location selection with smooth animation
-  void _onSearchLocationSelected(LatLng location, {bool isCity = false}) async {
-    await HapticFeedbackService.mediumImpact();
-    
-    // Smooth animated move to the selected location with appropriate zoom
-    final targetZoom = isCity ? 13.0 : 16.0;
-    await _animateToLocation(location, targetZoom, const Duration(milliseconds: 1000));
-  }
 
   /// Get approximate location name for route saving
   Future<String?> _getApproximateLocation(LatLng point) async {
@@ -1990,6 +2032,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _routeClearController.dispose();
+    _modeTransitionController.dispose();
     LocationService.stopLocationTracking();
     super.dispose();
   }

@@ -3,28 +3,64 @@ import '../../../core/theme/app_colors.dart';
 import '../../../core/constants/activity_types.dart';
 import '../models/saved_route.dart';
 import '../services/route_storage_service.dart';
+import 'route_details_screen.dart';
 
 class RoutesScreen extends StatefulWidget {
   final Function(SavedRoute)? onRouteSelected;
+  final VoidCallback? onSwitchToMap;
   final bool shouldRefresh;
   final VoidCallback? onRefreshComplete;
   
-  const RoutesScreen({super.key, this.onRouteSelected, this.shouldRefresh = false, this.onRefreshComplete});
+  const RoutesScreen({super.key, this.onRouteSelected, this.onSwitchToMap, this.shouldRefresh = false, this.onRefreshComplete});
 
   @override
   State<RoutesScreen> createState() => _RoutesScreenState();
 }
 
-class _RoutesScreenState extends State<RoutesScreen> {
+class _RoutesScreenState extends State<RoutesScreen> 
+    with TickerProviderStateMixin {
   String _searchQuery = '';
   ActivityType? _filterActivity;
   List<SavedRoute> _savedRoutes = [];
   bool _isLoading = true;
+  
+  late AnimationController _listController;
+  late Animation<double> _listFadeAnimation;
+  late Animation<Offset> _listSlideAnimation;
 
   @override
   void initState() {
     super.initState();
+    
+    // Initialize animations
+    _listController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    
+    _listFadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _listController,
+      curve: Curves.easeOut,
+    ));
+    
+    _listSlideAnimation = Tween<Offset>(
+      begin: const Offset(0, 0.1),
+      end: Offset.zero,
+    ).animate(CurvedAnimation(
+      parent: _listController,
+      curve: Curves.easeOutCubic,
+    ));
+    
     _loadRoutes();
+  }
+  
+  @override
+  void dispose() {
+    _listController.dispose();
+    super.dispose();
   }
 
   @override
@@ -45,6 +81,9 @@ class _RoutesScreenState extends State<RoutesScreen> {
         _savedRoutes = routes;
         _isLoading = false;
       });
+      
+      // Start list animation after loading
+      _listController.forward();
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -135,12 +174,21 @@ class _RoutesScreenState extends State<RoutesScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : filteredRoutes.isEmpty
                     ? _buildEmptyState()
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: filteredRoutes.length,
-                        itemBuilder: (context, index) {
-                          return _buildRouteCard(filteredRoutes[index]);
-                        },
+                    : SlideTransition(
+                        position: _listSlideAnimation,
+                        child: FadeTransition(
+                          opacity: _listFadeAnimation,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: filteredRoutes.length,
+                            itemBuilder: (context, index) {
+                              return _buildAnimatedRouteCard(
+                                filteredRoutes[index],
+                                index,
+                              );
+                            },
+                          ),
+                        ),
                       ),
           ),
         ],
@@ -235,9 +283,27 @@ class _RoutesScreenState extends State<RoutesScreen> {
     );
   }
 
+  Widget _buildAnimatedRouteCard(SavedRoute route, int index) {
+    return AnimatedBuilder(
+      animation: _listFadeAnimation,
+      builder: (context, child) {
+        return Transform.translate(
+          offset: Offset(0, 30 * (1 - _listFadeAnimation.value)),
+          child: Opacity(
+            opacity: _listFadeAnimation.value,
+            child: child,
+          ),
+        );
+      },
+      child: _buildRouteCard(route),
+    );
+  }
+  
   Widget _buildRouteCard(SavedRoute route) {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         onTap: () => _showRouteDetails(route),
         borderRadius: BorderRadius.circular(12),
@@ -395,11 +461,54 @@ class _RoutesScreenState extends State<RoutesScreen> {
     );
   }
 
-  void _showRouteDetails(SavedRoute route) {
-    // Call the callback to load the route on the map screen
-    widget.onRouteSelected?.call(route);
-  }
 
+  void _showRouteDetails(SavedRoute route) {
+    // Immediately load the route on the map in the background
+    widget.onRouteSelected?.call(route);
+    
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => RouteDetailsScreen(
+          route: route,
+          onOpenOnMap: (r) {
+            // Route is already loaded in background - just switch to map tab
+            Navigator.of(context).pop(); // Close route details
+            widget.onSwitchToMap?.call(); // Switch to map tab
+          },
+        ),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          // Smooth slide up transition
+          const begin = Offset(0.0, 1.0);
+          const end = Offset.zero;
+          const curve = Curves.easeOutCubic;
+
+          var tween = Tween(begin: begin, end: end).chain(
+            CurveTween(curve: curve),
+          );
+          var offsetAnimation = animation.drive(tween);
+          
+          // Also add fade animation
+          var fadeAnimation = Tween<double>(
+            begin: 0.0,
+            end: 1.0,
+          ).animate(CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOut,
+          ));
+
+          return SlideTransition(
+            position: offsetAnimation,
+            child: FadeTransition(
+              opacity: fadeAnimation,
+              child: child,
+            ),
+          );
+        },
+        transitionDuration: const Duration(milliseconds: 400),
+      ),
+    );
+  }
+  
   void _navigateRoute(SavedRoute route) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
