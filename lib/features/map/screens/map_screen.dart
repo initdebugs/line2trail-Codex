@@ -57,6 +57,9 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
   final MapLayerType _currentMapLayer = MapLayerType.openStreetMap; // Always use OpenStreetMap
   LatLng? _previewMarker; // Preview marker for first tap
   List<LatLng> _distanceMarkers = []; // Kilometer/mile markers along route
+  LatLng? _pointerPosition; // Current pointer/finger position for preview line
+  LatLng? _snapFeedbackPosition; // Position for snap feedback animation
+  bool _showSnapFeedback = false; // Show snap feedback pulse
   
   // Roundtrip generator state
   bool _isRoundtripMode = false;
@@ -70,6 +73,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
   late Animation<double> _routeClearAnimation;
   late AnimationController _modeTransitionController;
   late Animation<double> _modeTransitionAnimation;
+  late AnimationController _snapFeedbackController;
+  late Animation<double> _snapFeedbackAnimation;
 
   @override
   void initState() {
@@ -99,7 +104,26 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
       parent: _modeTransitionController,
       curve: Curves.easeOutCubic,
     ));
-    
+
+    _snapFeedbackController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    _snapFeedbackAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _snapFeedbackController,
+      curve: Curves.easeOut,
+    ))..addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() {
+          _showSnapFeedback = false;
+        });
+        _snapFeedbackController.reset();
+      }
+    });
+
     _initializeLocation();
     _loadSettings();
     // Test routing service when app starts
@@ -223,23 +247,42 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
     return Scaffold(
       body: Stack(
         children: [
-          // Map
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: _currentLocation,
-              initialZoom: 15.0,
-              minZoom: 3.0,
-              maxZoom: 18.0,
-              onTap: (_isDrawingMode || _isRoundtripMode) ? _onMapTap : null,
-              onMapEvent: (event) {
-                // Save the map center when user moves the map
-                if (event is MapEventMoveEnd) {
-                  LocationService.updateLastLocation(event.camera.center);
-                }
-              },
-            ),
-            children: [
+          // Map with pointer tracking
+          Listener(
+            onPointerMove: _isDrawingMode ? (event) {
+              final camera = _mapController.camera;
+              final screenPoint = Point(event.localPosition.dx, event.localPosition.dy);
+              final point = camera.pointToLatLng(screenPoint);
+              setState(() {
+                _pointerPosition = point;
+              });
+            } : null,
+            onPointerUp: _isDrawingMode ? (_) {
+              setState(() {
+                _pointerPosition = null;
+              });
+            } : null,
+            onPointerCancel: _isDrawingMode ? (_) {
+              setState(() {
+                _pointerPosition = null;
+              });
+            } : null,
+            child: FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: _currentLocation,
+                initialZoom: 15.0,
+                minZoom: 3.0,
+                maxZoom: 18.0,
+                onTap: (_isDrawingMode || _isRoundtripMode) ? _onMapTap : null,
+                onMapEvent: (event) {
+                  // Save the map center when user moves the map
+                  if (event is MapEventMoveEnd) {
+                    LocationService.updateLastLocation(event.camera.center);
+                  }
+                },
+              ),
+              children: [
               // Tile layer
               TileLayer(
                 urlTemplate: _currentMapLayer.urlTemplate,
@@ -366,15 +409,66 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
                     }),
                   ],
                 ),
+              // Preview line while drawing (dashed line from last point to pointer)
+              if (_isDrawingMode && _pointerPosition != null && (_currentRoute.isNotEmpty || _previewMarker != null))
+                PolylineLayer(
+                  polylines: [
+                    Polyline(
+                      points: [
+                        (_currentRoute.isNotEmpty ? _currentRoute.last : _previewMarker)!,
+                        _pointerPosition!,
+                      ],
+                      strokeWidth: 3.0,
+                      color: AppColors.drawingRoute.withOpacity(0.5),
+                      borderColor: AppColors.textInverse.withOpacity(0.3),
+                      borderStrokeWidth: 1.0,
+                      pattern: StrokePattern.dashed(segments: [10, 10]),
+                    ),
+                  ],
+                ),
+
+              // Snap feedback pulse animation
+              if (_showSnapFeedback && _snapFeedbackPosition != null)
+                AnimatedBuilder(
+                  animation: _snapFeedbackAnimation,
+                  builder: (context, child) {
+                    return MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _snapFeedbackPosition!,
+                          width: 80 * _snapFeedbackAnimation.value,
+                          height: 80 * _snapFeedbackAnimation.value,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.trailGreen.withOpacity(
+                                (1 - _snapFeedbackAnimation.value) * 0.4,
+                              ),
+                              border: Border.all(
+                                color: AppColors.trailGreen.withOpacity(
+                                  (1 - _snapFeedbackAnimation.value) * 0.8,
+                                ),
+                                width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+
               // Waypoint markers (show user tap points with endpoints always visible)
               EditableWaypointLayer(
                 points: _userTapPoints,
                 showWaypoints: _showWaypoints && _userTapPoints.isNotEmpty,
                 showEndpoints: _userTapPoints.isNotEmpty, // Always show start/end when route exists
                 onWaypointTapped: _onWaypointTapped,
+                onWaypointLongPressed: _onWaypointLongPressed,
                 onWaypointDragged: _onWaypointDragged,
               ),
             ],
+            ),
           ),
 
           // Roundtrip mode visual guidance (non-blocking)
@@ -722,6 +816,13 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
           _isSnapping = false;
           // Calculate distance markers for the new route
           _distanceMarkers = _generateDistanceMarkers();
+
+          // Show snap feedback at the last point
+          if (snappedPoints.isNotEmpty) {
+            _snapFeedbackPosition = snappedPoints.last;
+            _showSnapFeedback = true;
+            _snapFeedbackController.forward();
+          }
         });
       }
     } catch (e) {
@@ -1216,6 +1317,82 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
       // Middle waypoint - show options including split
       _showMiddleWaypointOptions(index);
     }
+  }
+
+  void _onWaypointLongPressed(int index) async {
+    await HapticFeedbackService.mediumImpact();
+
+    // Enhanced context menu with more options
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Waypoint ${index + 1}',
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: const Icon(Icons.add_location, color: AppColors.trailGreen),
+              title: const Text('Tusenpunt Toevoegen'),
+              subtitle: const Text('Voeg een punt toe vóór deze waypoint'),
+              onTap: () {
+                Navigator.pop(context);
+                _insertWaypointBefore(index);
+              },
+            ),
+            if (index > 0 && index < _userTapPoints.length - 1) ...[
+              ListTile(
+                leading: const Icon(Icons.call_split, color: AppColors.pathBlue),
+                title: const Text('Route Splitsen'),
+                subtitle: const Text('Splits route op dit punt'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _splitRouteAt(index);
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(Icons.delete, color: AppColors.errorRed),
+              title: const Text('Waypoint Verwijderen'),
+              subtitle: const Text('Verwijder dit punt uit de route'),
+              onTap: () {
+                Navigator.pop(context);
+                _removeWaypoint(index);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _insertWaypointBefore(int index) async {
+    if (index <= 0 || index >= _userTapPoints.length) return;
+
+    // Calculate midpoint between previous and current waypoint
+    final prev = _userTapPoints[index - 1];
+    final curr = _userTapPoints[index];
+    final midpoint = LatLng(
+      (prev.latitude + curr.latitude) / 2,
+      (prev.longitude + curr.longitude) / 2,
+    );
+
+    setState(() {
+      _userTapPoints.insert(index, midpoint);
+      _currentRoute.insert(index, midpoint);
+    });
+
+    await _snapRoute();
+    await HapticFeedbackService.successImpact();
   }
 
   void _showMiddleWaypointOptions(int index) {
@@ -2034,6 +2211,7 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
   void dispose() {
     _routeClearController.dispose();
     _modeTransitionController.dispose();
+    _snapFeedbackController.dispose();
     LocationService.stopLocationTracking();
     super.dispose();
   }

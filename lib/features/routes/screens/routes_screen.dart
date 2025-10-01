@@ -300,24 +300,28 @@ class _RoutesScreenState extends State<RoutesScreen>
   }
   
   Widget _buildRouteCard(SavedRoute route) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 16),
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: InkWell(
-        onTap: () => _showRouteDetails(route),
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
+    return Hero(
+      tag: 'route-${route.id}',
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 16),
+        elevation: 2,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => _showRouteDetails(route),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
               Row(
                 children: [
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: AppColors.trailGreen.withOpacity(0.1),
+                      color: AppColors.trailGreen.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Icon(
@@ -393,10 +397,10 @@ class _RoutesScreenState extends State<RoutesScreen>
                         width: 36,
                         height: 36,
                         decoration: BoxDecoration(
-                          color: Colors.red.withOpacity(0.1),
+                          color: Colors.red.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(18),
                           border: Border.all(
-                            color: Colors.red.withOpacity(0.3),
+                            color: Colors.red.withValues(alpha: 0.3),
                             width: 1,
                           ),
                         ),
@@ -440,7 +444,7 @@ class _RoutesScreenState extends State<RoutesScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.pathBlue.withOpacity(0.1),
+        color: AppColors.pathBlue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -543,18 +547,22 @@ class _RoutesScreenState extends State<RoutesScreen>
       try {
         await RouteStorageService.deleteRoute(route.id);
         await _loadRoutes(); // Reload the routes list
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${route.name} verwijderd'),
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('${route.name} verwijderd'),
+            ),
+          );
+        }
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Fout bij verwijderen route: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Fout bij verwijderen route: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     }
   }

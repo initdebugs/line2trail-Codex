@@ -219,24 +219,28 @@ class _RouteDetailsScreenState extends State<RouteDetailsScreen>
   }
 
   Widget _header(SavedRoute r) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: AppColors.trailGreenSurface,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Icon(r.activityType.icon, color: AppColors.trailGreen),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                r.name,
+    return Hero(
+      tag: 'route-${r.id}',
+      child: Material(
+        color: Colors.transparent,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.trailGreenSurface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(r.activityType.icon, color: AppColors.trailGreen),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.name,
                 style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
@@ -253,6 +257,8 @@ class _RouteDetailsScreenState extends State<RouteDetailsScreen>
           ),
         ),
       ],
+        ),
+      ),
     );
   }
 

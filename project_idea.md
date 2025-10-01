@@ -1,10 +1,10 @@
-Project Idea: Line2Trail (working name)
+Project Idea: Pathify (working name)
 
 A draw-your-own-route planner for hiking, running, cycling, and walking.
 
 Core Concept
 
-Line2Trail lets users trace a line on the map with their finger, and the app automatically snaps it to real-world paths, trails, and roads. It then gives them a clean route with distance, elevation, and turn cues — something between a casual sketch and a professional navigation tool.
+Pathify lets users trace a line on the map with their finger, and the app automatically snaps it to real-world paths, trails, and roads. It then gives them a clean route with distance, elevation, and turn cues — something between a casual sketch and a professional navigation tool.
 
 The app is lightweight, offline-friendly, and designed for hikers, runners, cyclists, and casual travelers who want quick custom routes without wrestling with traditional route planners.
 

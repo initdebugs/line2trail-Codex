@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/activity_types.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../shared/widgets/animated_tap_button.dart';
 import 'activity_mode_chip.dart';
 
 class RouteBar extends StatefulWidget {
@@ -31,7 +32,39 @@ class RouteBar extends StatefulWidget {
   State<RouteBar> createState() => _RouteBarState();
 }
 
-class _RouteBarState extends State<RouteBar> {
+class _RouteBarState extends State<RouteBar> with SingleTickerProviderStateMixin {
+  late AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _flipController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    );
+    _flipAnimation = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
+    );
+  }
+
+  @override
+  void didUpdateWidget(RouteBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.isDrawing != widget.isDrawing) {
+      if (_flipController.status == AnimationStatus.completed) {
+        _flipController.reverse();
+      } else {
+        _flipController.forward();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -144,11 +177,34 @@ class _RouteBarState extends State<RouteBar> {
                   disabled: widget.hasRoute,
                 ),
               ),
-            // Draw/Stop button (primary action)
+            // Draw/Stop button (primary action) with flip animation
             Expanded(
-              child: _PrimaryActionButton(
-                isDrawing: widget.isDrawing,
-                onPressed: widget.onToggleDraw,
+              child: AnimatedBuilder(
+                animation: _flipAnimation,
+                builder: (context, child) {
+                  final angle = _flipAnimation.value * 3.14159; // π radians = 180°
+                  final transform = Matrix4.identity()
+                    ..setEntry(3, 2, 0.001) // perspective
+                    ..rotateY(angle);
+
+                  return Transform(
+                    transform: transform,
+                    alignment: Alignment.center,
+                    child: _flipAnimation.value < 0.5
+                        ? _PrimaryActionButton(
+                            isDrawing: false,
+                            onPressed: widget.onToggleDraw,
+                          )
+                        : Transform(
+                            transform: Matrix4.identity()..rotateY(3.14159),
+                            alignment: Alignment.center,
+                            child: _PrimaryActionButton(
+                              isDrawing: true,
+                              onPressed: widget.onToggleDraw,
+                            ),
+                          ),
+                  );
+                },
               ),
             ),
             // Roundtrip button (only when not drawing and no route)
@@ -243,35 +299,31 @@ class _RoundtripButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [AppColors.pathBlue, AppColors.pathBlue.withOpacity(0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.pathBlue.withOpacity(0.3),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
+    return AnimatedTapButton(
+      onTap: onPressed,
+      child: Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [AppColors.pathBlue, AppColors.pathBlue.withOpacity(0.8)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
           borderRadius: BorderRadius.circular(22),
-          child: Center(
-            child: Icon(
-              Icons.swap_horiz_rounded,
-              color: Colors.white,
-              size: 20,
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.pathBlue.withOpacity(0.3),
+              blurRadius: 4,
+              offset: const Offset(0, 2),
             ),
+          ],
+        ),
+        child: Center(
+          child: Icon(
+            Icons.swap_horiz_rounded,
+            color: Colors.white,
+            size: 20,
           ),
         ),
       ),
@@ -292,73 +344,65 @@ class _SaveButton extends StatelessWidget {
   Widget build(BuildContext context) {
     if (showText) {
       // Show as expanded button with text
-      return Container(
-        height: 44,
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.darkSurface
-              : AppColors.background,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: AppColors.trailGreen.withOpacity(0.3),
-            width: 1.5,
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onPressed,
+      return AnimatedTapButton(
+        onTap: onPressed,
+        child: Container(
+          height: 44,
+          decoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.darkSurface
+                : AppColors.background,
             borderRadius: BorderRadius.circular(22),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    Icons.bookmark_add_outlined,
+            border: Border.all(
+              color: AppColors.trailGreen.withOpacity(0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.bookmark_add_outlined,
+                  color: AppColors.trailGreen,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'Opslaan',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
                     color: AppColors.trailGreen,
-                    size: 18,
+                    fontWeight: FontWeight.w600,
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Opslaan',
-                    style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                      color: AppColors.trailGreen,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       );
     } else {
       // Show as compact icon-only button
-      return Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? AppColors.darkSurface
-              : AppColors.background,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(
-            color: AppColors.trailGreen.withOpacity(0.3),
-            width: 1.5,
-          ),
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: onPressed,
+      return AnimatedTapButton(
+        onTap: onPressed,
+        child: Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? AppColors.darkSurface
+                : AppColors.background,
             borderRadius: BorderRadius.circular(22),
-            child: Center(
-              child: Icon(
-                Icons.bookmark_add_outlined,
-                color: AppColors.trailGreen,
-                size: 18,
-              ),
+            border: Border.all(
+              color: AppColors.trailGreen.withOpacity(0.3),
+              width: 1.5,
+            ),
+          ),
+          child: Center(
+            child: Icon(
+              Icons.bookmark_add_outlined,
+              color: AppColors.trailGreen,
+              size: 18,
             ),
           ),
         ),
@@ -376,41 +420,37 @@ class _CancelRoundtripButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.4),
-          width: 1.5,
-        ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onPressed,
+    return AnimatedTapButton(
+      onTap: onPressed,
+      child: Container(
+        height: 40,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.2),
           borderRadius: BorderRadius.circular(20),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.close,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.4),
+            width: 1.5,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.close,
+                color: Colors.white,
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Annuleer',
+                style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   color: Colors.white,
-                  size: 16,
+                  fontWeight: FontWeight.w600,
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  'Annuleer',
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
