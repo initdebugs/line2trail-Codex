@@ -10,20 +10,26 @@ class RoutesScreen extends StatefulWidget {
   final VoidCallback? onSwitchToMap;
   final bool shouldRefresh;
   final VoidCallback? onRefreshComplete;
-  
-  const RoutesScreen({super.key, this.onRouteSelected, this.onSwitchToMap, this.shouldRefresh = false, this.onRefreshComplete});
+
+  const RoutesScreen({
+    super.key,
+    this.onRouteSelected,
+    this.onSwitchToMap,
+    this.shouldRefresh = false,
+    this.onRefreshComplete,
+  });
 
   @override
   State<RoutesScreen> createState() => _RoutesScreenState();
 }
 
-class _RoutesScreenState extends State<RoutesScreen> 
+class _RoutesScreenState extends State<RoutesScreen>
     with TickerProviderStateMixin {
   String _searchQuery = '';
   ActivityType? _filterActivity;
   List<SavedRoute> _savedRoutes = [];
   bool _isLoading = true;
-  
+
   late AnimationController _listController;
   late Animation<double> _listFadeAnimation;
   late Animation<Offset> _listSlideAnimation;
@@ -31,32 +37,26 @@ class _RoutesScreenState extends State<RoutesScreen>
   @override
   void initState() {
     super.initState();
-    
+
     // Initialize animations
     _listController = AnimationController(
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
-    
+
     _listFadeAnimation = Tween<double>(
       begin: 0.0,
       end: 1.0,
-    ).animate(CurvedAnimation(
-      parent: _listController,
-      curve: Curves.easeOut,
-    ));
-    
-    _listSlideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.1),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(
-      parent: _listController,
-      curve: Curves.easeOutCubic,
-    ));
-    
+    ).animate(CurvedAnimation(parent: _listController, curve: Curves.easeOut));
+
+    _listSlideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero).animate(
+          CurvedAnimation(parent: _listController, curve: Curves.easeOutCubic),
+        );
+
     _loadRoutes();
   }
-  
+
   @override
   void dispose() {
     _listController.dispose();
@@ -66,7 +66,7 @@ class _RoutesScreenState extends State<RoutesScreen>
   @override
   void didUpdateWidget(RoutesScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
+
     // Refresh routes if requested
     if (widget.shouldRefresh && !oldWidget.shouldRefresh) {
       _loadRoutes();
@@ -81,7 +81,7 @@ class _RoutesScreenState extends State<RoutesScreen>
         _savedRoutes = routes;
         _isLoading = false;
       });
-      
+
       // Start list animation after loading
       _listController.forward();
     } catch (e) {
@@ -173,23 +173,23 @@ class _RoutesScreenState extends State<RoutesScreen>
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
                 : filteredRoutes.isEmpty
-                    ? _buildEmptyState()
-                    : SlideTransition(
-                        position: _listSlideAnimation,
-                        child: FadeTransition(
-                          opacity: _listFadeAnimation,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: filteredRoutes.length,
-                            itemBuilder: (context, index) {
-                              return _buildAnimatedRouteCard(
-                                filteredRoutes[index],
-                                index,
-                              );
-                            },
-                          ),
-                        ),
+                ? _buildEmptyState()
+                : SlideTransition(
+                    position: _listSlideAnimation,
+                    child: FadeTransition(
+                      opacity: _listFadeAnimation,
+                      child: ListView.builder(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: filteredRoutes.length,
+                        itemBuilder: (context, index) {
+                          return _buildAnimatedRouteCard(
+                            filteredRoutes[index],
+                            index,
+                          );
+                        },
                       ),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -198,9 +198,11 @@ class _RoutesScreenState extends State<RoutesScreen>
 
   List<SavedRoute> _getFilteredRoutes() {
     return _savedRoutes.where((route) {
-      final matchesSearch = _searchQuery.isEmpty ||
+      final matchesSearch =
+          _searchQuery.isEmpty ||
           route.name.toLowerCase().contains(_searchQuery.toLowerCase());
-      final matchesFilter = _filterActivity == null || route.activityType == _filterActivity;
+      final matchesFilter =
+          _filterActivity == null || route.activityType == _filterActivity;
       return matchesSearch && matchesFilter;
     }).toList();
   }
@@ -210,11 +212,7 @@ class _RoutesScreenState extends State<RoutesScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.route_outlined,
-            size: 64,
-            color: AppColors.textSecondary,
-          ),
+          Icon(Icons.route_outlined, size: 64, color: AppColors.textSecondary),
           const SizedBox(height: 16),
           Text(
             'No routes found',
@@ -225,9 +223,9 @@ class _RoutesScreenState extends State<RoutesScreen>
             _searchQuery.isEmpty
                 ? 'Create your first route by drawing on the map!'
                 : 'Try adjusting your search or filters.',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppColors.textSecondary,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(color: AppColors.textSecondary),
             textAlign: TextAlign.center,
           ),
         ],
@@ -289,16 +287,13 @@ class _RoutesScreenState extends State<RoutesScreen>
       builder: (context, child) {
         return Transform.translate(
           offset: Offset(0, 30 * (1 - _listFadeAnimation.value)),
-          child: Opacity(
-            opacity: _listFadeAnimation.value,
-            child: child,
-          ),
+          child: Opacity(opacity: _listFadeAnimation.value, child: child),
         );
       },
       child: _buildRouteCard(route),
     );
   }
-  
+
   Widget _buildRouteCard(SavedRoute route) {
     return Hero(
       tag: 'route-${route.id}',
@@ -316,124 +311,124 @@ class _RoutesScreenState extends State<RoutesScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.trailGreen.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Icon(
-                      route.activityType.icon,
-                      size: 20,
-                      color: AppColors.trailGreen,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          route.name,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          route.location ?? 'Unknown Location',
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                   Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Navigate button - blue with white arrow
                       Container(
-                        height: 36,
+                        padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: Colors.blue,
-                          borderRadius: BorderRadius.circular(18),
+                          color: AppColors.trailGreen.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _navigateRoute(route),
-                            borderRadius: BorderRadius.circular(18),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 12),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.navigation,
-                                    color: Colors.white,
-                                    size: 16,
+                        child: Icon(
+                          route.activityType.icon,
+                          size: 20,
+                          color: AppColors.trailGreen,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              route.name,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              route.location ?? 'Unknown Location',
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: AppColors.textSecondary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // Navigate button - blue with white arrow
+                          Container(
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(18),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _navigateRoute(route),
+                                borderRadius: BorderRadius.circular(18),
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 12),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.navigation,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      SizedBox(width: 6),
+                                      Text(
+                                        'Navigeren',
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  SizedBox(width: 6),
-                                  Text(
-                                    'Navigeren',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
+                                ),
                               ),
                             ),
                           ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Delete button
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: Colors.red.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(18),
-                          border: Border.all(
-                            color: Colors.red.withValues(alpha: 0.3),
-                            width: 1,
-                          ),
-                        ),
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () => _deleteRoute(route),
-                            borderRadius: BorderRadius.circular(18),
-                            child: const Center(
-                              child: Icon(
-                                Icons.delete_outline,
-                                color: Colors.red,
-                                size: 18,
+                          const SizedBox(width: 8),
+                          // Delete button
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.red.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: Colors.red.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _deleteRoute(route),
+                                borderRadius: BorderRadius.circular(18),
+                                child: const Center(
+                                  child: Icon(
+                                    Icons.delete_outline,
+                                    color: Colors.red,
+                                    size: 18,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      _buildStatChip(Icons.straighten, route.formattedDistance),
+                      _buildStatChip(Icons.schedule, route.formattedTime),
+                      _buildStatChip(Icons.calendar_today, route.formattedDate),
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  _buildStatChip(Icons.straighten, route.formattedDistance),
-                  _buildStatChip(Icons.schedule, route.formattedTime),
-                  _buildStatChip(Icons.calendar_today, route.formattedDate),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -465,54 +460,47 @@ class _RoutesScreenState extends State<RoutesScreen>
     );
   }
 
-
   void _showRouteDetails(SavedRoute route) {
-    // Immediately load the route on the map in the background
-    widget.onRouteSelected?.call(route);
-    
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => RouteDetailsScreen(
-          route: route,
-          onOpenOnMap: (r) {
-            // Route is already loaded in background - just switch to map tab
-            Navigator.of(context).pop(); // Close route details
-            widget.onSwitchToMap?.call(); // Switch to map tab
-          },
-        ),
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            RouteDetailsScreen(
+              route: route,
+              onOpenOnMap: (r) {
+                // Load the route on the map
+                widget.onRouteSelected?.call(r);
+                Navigator.of(context).pop(); // Close route details
+                widget.onSwitchToMap?.call(); // Switch to map tab
+              },
+            ),
         transitionsBuilder: (context, animation, secondaryAnimation, child) {
           // Smooth slide up transition
           const begin = Offset(0.0, 1.0);
           const end = Offset.zero;
           const curve = Curves.easeOutCubic;
 
-          var tween = Tween(begin: begin, end: end).chain(
-            CurveTween(curve: curve),
-          );
+          var tween = Tween(
+            begin: begin,
+            end: end,
+          ).chain(CurveTween(curve: curve));
           var offsetAnimation = animation.drive(tween);
-          
+
           // Also add fade animation
           var fadeAnimation = Tween<double>(
             begin: 0.0,
             end: 1.0,
-          ).animate(CurvedAnimation(
-            parent: animation,
-            curve: Curves.easeOut,
-          ));
+          ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut));
 
           return SlideTransition(
             position: offsetAnimation,
-            child: FadeTransition(
-              opacity: fadeAnimation,
-              child: child,
-            ),
+            child: FadeTransition(opacity: fadeAnimation, child: child),
           );
         },
         transitionDuration: const Duration(milliseconds: 400),
       ),
     );
   }
-  
+
   void _navigateRoute(SavedRoute route) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -534,9 +522,7 @@ class _RoutesScreenState extends State<RoutesScreen>
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, true),
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
-            ),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
             child: const Text('Verwijderen'),
           ),
         ],
@@ -548,11 +534,9 @@ class _RoutesScreenState extends State<RoutesScreen>
         await RouteStorageService.deleteRoute(route.id);
         await _loadRoutes(); // Reload the routes list
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${route.name} verwijderd'),
-            ),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('${route.name} verwijderd')));
         }
       } catch (e) {
         if (mounted) {
@@ -567,4 +551,3 @@ class _RoutesScreenState extends State<RoutesScreen>
     }
   }
 }
-

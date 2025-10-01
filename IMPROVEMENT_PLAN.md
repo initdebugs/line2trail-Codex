@@ -21,10 +21,9 @@ Een gestructureerd plan voor het verbeteren van de UX, UI, functionaliteit en te
 
 ### 2. Map Interactie & Feedback
 **Verbeteringen:**
-- **Draw preview line**: Toon een gestippelde preview lijn terwijl gebruiker over kaart sleept (voor snellere tekenervaringen)
-- **Snap feedback**: Visual indicator wanneer route "snapt" naar pad (kleine puls animatie)
-- **Long-press context menu**: Houd waypoint ingedrukt voor opties (verplaats, verwijder, voeg tussen-punt toe)
-- **Magnetic snapping**: Laat eindpunt "magnetisch" naar startpunt trekken voor loop completion (met visuele feedback)
+- ✅ **Snap feedback**: Visual indicator wanneer route "snapt" naar pad (kleine puls animatie)
+- ✅ **Long-press context menu**: Houd waypoint ingedrukt voor opties (verplaats, verwijder, voeg tussen-punt toe)
+- ✅ **Magnetic snapping**: Laat eindpunt "magnetisch" naar startpunt trekken voor loop completion (met visuele feedback)
 
 ### 3. Route Details Scherm
 **Huidige issues:**

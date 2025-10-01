@@ -46,16 +46,23 @@ class _RouteBarState extends State<RouteBar> with SingleTickerProviderStateMixin
     _flipAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
     );
+
+    // Initialize animation state to match initial drawing state
+    if (widget.isDrawing) {
+      _flipController.value = 1.0;
+    }
   }
 
   @override
   void didUpdateWidget(RouteBar oldWidget) {
     super.didUpdateWidget(oldWidget);
+
+    // Sync animation with drawing state whenever it changes
     if (oldWidget.isDrawing != widget.isDrawing) {
-      if (_flipController.status == AnimationStatus.completed) {
-        _flipController.reverse();
-      } else {
+      if (widget.isDrawing) {
         _flipController.forward();
+      } else {
+        _flipController.reverse();
       }
     }
   }

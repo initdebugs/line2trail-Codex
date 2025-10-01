@@ -57,10 +57,11 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
   final MapLayerType _currentMapLayer = MapLayerType.openStreetMap; // Always use OpenStreetMap
   LatLng? _previewMarker; // Preview marker for first tap
   List<LatLng> _distanceMarkers = []; // Kilometer/mile markers along route
-  LatLng? _pointerPosition; // Current pointer/finger position for preview line
   LatLng? _snapFeedbackPosition; // Position for snap feedback animation
   bool _showSnapFeedback = false; // Show snap feedback pulse
-  
+  bool _showMagneticFeedback = false; // Show magnetic snap indicator
+  static const double _magneticSnapThreshold = 50.0; // Meters for magnetic snapping
+
   // Roundtrip generator state
   bool _isRoundtripMode = false;
   ActivityType? _roundtripActivity;
@@ -253,18 +254,27 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
               final camera = _mapController.camera;
               final screenPoint = Point(event.localPosition.dx, event.localPosition.dy);
               final point = camera.pointToLatLng(screenPoint);
+
+              // Check for magnetic snapping (when route has 3+ points)
+              bool shouldShowMagnetic = false;
+              if (_currentRoute.length >= 3) {
+                final startPoint = _currentRoute.first;
+                final distance = const Distance().as(LengthUnit.Meter, startPoint, point);
+                shouldShowMagnetic = distance <= _magneticSnapThreshold;
+              }
+
               setState(() {
-                _pointerPosition = point;
+                _showMagneticFeedback = shouldShowMagnetic;
               });
             } : null,
             onPointerUp: _isDrawingMode ? (_) {
               setState(() {
-                _pointerPosition = null;
+                _showMagneticFeedback = false;
               });
             } : null,
             onPointerCancel: _isDrawingMode ? (_) {
               setState(() {
-                _pointerPosition = null;
+                _showMagneticFeedback = false;
               });
             } : null,
             child: FlutterMap(
@@ -409,24 +419,6 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
                     }),
                   ],
                 ),
-              // Preview line while drawing (dashed line from last point to pointer)
-              if (_isDrawingMode && _pointerPosition != null && (_currentRoute.isNotEmpty || _previewMarker != null))
-                PolylineLayer(
-                  polylines: [
-                    Polyline(
-                      points: [
-                        (_currentRoute.isNotEmpty ? _currentRoute.last : _previewMarker)!,
-                        _pointerPosition!,
-                      ],
-                      strokeWidth: 3.0,
-                      color: AppColors.drawingRoute.withOpacity(0.5),
-                      borderColor: AppColors.textInverse.withOpacity(0.3),
-                      borderStrokeWidth: 1.0,
-                      pattern: StrokePattern.dashed(segments: [10, 10]),
-                    ),
-                  ],
-                ),
-
               // Snap feedback pulse animation
               if (_showSnapFeedback && _snapFeedbackPosition != null)
                 AnimatedBuilder(
@@ -449,6 +441,35 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
                                   (1 - _snapFeedbackAnimation.value) * 0.8,
                                 ),
                                 width: 2,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+
+              // Magnetic snapping feedback (pulsing ring around start point)
+              if (_showMagneticFeedback && _currentRoute.isNotEmpty)
+                TweenAnimationBuilder<double>(
+                  tween: Tween(begin: 0.8, end: 1.1),
+                  duration: const Duration(milliseconds: 800),
+                  curve: Curves.easeInOut,
+                  builder: (context, value, child) {
+                    return MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _currentRoute.first,
+                          width: 60 * value,
+                          height: 60 * value,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.blue.withOpacity(0.15),
+                              border: Border.all(
+                                color: Colors.blue.withOpacity(0.6),
+                                width: 3,
                               ),
                             ),
                           ),
@@ -736,10 +757,28 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
         await _snapCurrentRoute();
       } else {
         // Subsequent taps: continue adding to existing route
+
+        // Check for magnetic snapping to start point (close the loop)
+        LatLng finalPoint = point;
+        bool didMagneticSnap = false;
+
+        if (_currentRoute.length >= 3) {
+          final startPoint = _currentRoute.first;
+          final distance = const Distance().as(LengthUnit.Meter, startPoint, point);
+
+          if (distance <= _magneticSnapThreshold) {
+            // Snap to start point to close the loop
+            finalPoint = startPoint;
+            didMagneticSnap = true;
+            await HapticFeedbackService.success(); // Success feedback for loop completion
+          }
+        }
+
         setState(() {
-          _currentRoute.add(point);
-          _userTapPoints.add(point);
+          _currentRoute.add(finalPoint);
+          _userTapPoints.add(finalPoint);
           _routingError = '';
+          _showMagneticFeedback = false; // Clear magnetic feedback
           // Calculate distance markers for current route (even before snapping)
           _distanceMarkers = _generateDistanceMarkers();
         });
@@ -747,12 +786,14 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
         // Add to history
         _drawingHistory.addState(
           _currentRoute,
-          'Added point ${_currentRoute.length}',
+          didMagneticSnap ? 'Closed loop' : 'Added point ${_currentRoute.length}',
         );
 
-        
-        await HapticFeedbackService.drawingFeedback();
-        
+
+        if (!didMagneticSnap) {
+          await HapticFeedbackService.drawingFeedback();
+        }
+
         // Always snap after 2+ points
         await _snapCurrentRoute();
       }
@@ -1391,8 +1432,8 @@ class _MapScreenState extends State<MapScreen> with TickerProviderStateMixin, Au
       _currentRoute.insert(index, midpoint);
     });
 
-    await _snapRoute();
-    await HapticFeedbackService.successImpact();
+    await _snapCurrentRoute();
+    await HapticFeedbackService.success();
   }
 
   void _showMiddleWaypointOptions(int index) {

@@ -75,34 +75,38 @@ class FastRoundtripService {
     required RoundtripStrategy strategy,
   }) {
     final waypoints = <LatLng>[startPoint];
-    
+
     // Calculate optimal number of waypoints (fewer = faster routing)
     final numWaypoints = _getOptimalWaypointCount(targetDistanceKm, strategy);
-    final approximateRadius = (targetDistanceKm * 1000) / (2 * pi);
+
+    // IMPROVED: Account for road snapping overhead (roads aren't straight lines)
+    // Routed distance is typically 1.3-1.5x the straight-line distance
+    final roadSnapFactor = 1.4;
+    final approximateRadius = (targetDistanceKm * 1000) / (2 * pi * roadSnapFactor);
     final angleStep = (2 * pi) / numWaypoints;
-    
-    debugPrint('🎯 Creating $numWaypoints waypoints with ~${(approximateRadius / 1000).toStringAsFixed(1)}km radius');
-    
+
+    debugPrint('🎯 Creating $numWaypoints waypoints with ~${(approximateRadius / 1000).toStringAsFixed(1)}km radius (adjusted for road snapping)');
+
     // Generate waypoints in strategic pattern
     for (int i = 0; i < numWaypoints - 1; i++) {
       final baseAngle = i * angleStep;
-      
+
       // Add variation based on strategy
       final variation = _getAngleVariation(strategy);
       final actualAngle = baseAngle + ((Random().nextDouble() - 0.5) * variation * angleStep);
-      
+
       // Create interesting radius variation
       final radiusVariation = _getRadiusVariation(strategy, i, numWaypoints);
       final effectiveRadius = approximateRadius * radiusVariation;
-      
+
       // Calculate waypoint position
       final waypoint = _calculatePointAtDistance(startPoint, actualAngle, effectiveRadius);
       waypoints.add(waypoint);
     }
-    
+
     // Close the loop
     waypoints.add(startPoint);
-    
+
     return waypoints;
   }
 
@@ -121,39 +125,72 @@ class FastRoundtripService {
     }
   }
 
-  /// Route through waypoints using fast routing services with activity-specific priorities
+  /// Route through waypoints using segment-by-segment routing for reliability
   static Future<List<LatLng>> _routeWithFastServices(List<LatLng> waypoints, ActivityType activityType) async {
-    debugPrint('🎯 Routing for ${activityType.name} - prioritizing appropriate infrastructure');
-    
-    // Try activity-specific routing approaches in priority order
-    final routingStrategies = _getRoutingStrategies(activityType);
-    
-    for (final strategy in routingStrategies) {
+    debugPrint('🎯 Routing ${waypoints.length} waypoints segment-by-segment for ${activityType.name}');
+
+    if (waypoints.length < 2) return waypoints;
+
+    final completePath = <LatLng>[];
+    int successfulSegments = 0;
+    int failedSegments = 0;
+
+    // Route each segment individually for better reliability
+    for (int i = 0; i < waypoints.length - 1; i++) {
+      debugPrint('🗺️ Routing segment ${i + 1}/${waypoints.length - 1}');
+
       try {
-        debugPrint('🔄 Trying ${strategy['name']} routing...');
-        final result = await strategy['method'](waypoints, activityType);
-        if (result.isNotEmpty) {
-          debugPrint('✅ ${strategy['name']} routing succeeded with ${result.length} points');
-          return result;
+        final segmentPath = await RoutingService.snapToPath(
+          points: [waypoints[i], waypoints[i + 1]],
+          activityType: activityType,
+        );
+
+        if (segmentPath.isNotEmpty) {
+          // Add points, avoiding duplicates at segment boundaries
+          final startIdx = i == 0 ? 0 : 1;
+          for (int j = startIdx; j < segmentPath.length; j++) {
+            completePath.add(segmentPath[j]);
+          }
+          successfulSegments++;
+        } else {
+          // If routing fails, try mixed mode for this segment
+          debugPrint('⚠️ Primary routing failed for segment ${i + 1}, trying mixed mode');
+          final mixedSegment = await RoutingService.snapToPathMixed(
+            points: [waypoints[i], waypoints[i + 1]],
+            primaryActivityType: activityType,
+            allowMixedModes: true,
+          );
+
+          if (mixedSegment.isNotEmpty) {
+            final startIdx = i == 0 ? 0 : 1;
+            for (int j = startIdx; j < mixedSegment.length; j++) {
+              completePath.add(mixedSegment[j]);
+            }
+            successfulSegments++;
+          } else {
+            // Last resort: use direct line
+            debugPrint('❌ All routing failed for segment ${i + 1}, using direct line');
+            if (i == 0) completePath.add(waypoints[i]);
+            completePath.add(waypoints[i + 1]);
+            failedSegments++;
+          }
         }
       } catch (e) {
-        debugPrint('❌ ${strategy['name']} routing failed: $e');
-        continue;
+        debugPrint('❌ Routing error for segment ${i + 1}: $e');
+        // Fallback to direct line
+        if (i == 0) completePath.add(waypoints[i]);
+        completePath.add(waypoints[i + 1]);
+        failedSegments++;
       }
     }
-    
-    // If all specific strategies fail, try the mixed routing as last resort
-    debugPrint('⚠️ All activity-specific routing failed, trying mixed mode');
-    try {
-      return await RoutingService.snapToPathMixed(
-        points: waypoints,
-        primaryActivityType: activityType,
-        allowMixedModes: true,
-      );
-    } catch (e) {
-      debugPrint('❌ Mixed routing also failed: $e');
-      throw Exception('All routing methods failed for ${activityType.name}');
+
+    debugPrint('✅ Routing complete: $successfulSegments successful, $failedSegments failed segments');
+
+    if (failedSegments > successfulSegments) {
+      throw Exception('Too many segments failed to route properly (${failedSegments}/${waypoints.length - 1})');
     }
+
+    return completePath;
   }
 
   /// Get routing strategies in priority order for the activity type

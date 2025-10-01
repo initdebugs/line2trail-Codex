@@ -118,11 +118,14 @@ class RoundtripGenerationService {
     required int attempt,
   }) async {
     // Calculate parameters for waypoint distribution
-    final approximateRadius = targetDistanceM / (2 * pi);
+    // IMPROVED: Account for road snapping overhead (roads aren't straight lines)
+    // Routed distance is typically 1.3-1.5x the straight-line distance
+    final roadSnapFactor = 1.4;
+    final approximateRadius = targetDistanceM / (2 * pi * roadSnapFactor);
     final numWaypoints = _calculateOptimalWaypoints(targetDistanceM, strategy);
     final angleStep = (2 * pi) / numWaypoints;
-    
-    debugPrint('🎯 Generating $numWaypoints waypoints in ~${(approximateRadius / 1000).toStringAsFixed(1)}km radius');
+
+    debugPrint('🎯 Generating $numWaypoints waypoints in ~${(approximateRadius / 1000).toStringAsFixed(1)}km radius (adjusted for road snapping)');
     
     final waypoints = <LatLng>[startPoint];
     final usedDirections = <double>[];
